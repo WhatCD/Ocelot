@@ -158,7 +158,7 @@ std::string worker::work(std::string &input, std::string &ip) {
 		if(tor == torrents_list.end()) {
 			return error("unregistered torrent");
 		}
-		return announce(tor->second, u->second, params, headers, ip, input);
+		return announce(tor->second, u->second, params, headers, ip);
 	} else {
 		return scrape(infohashes);
 	}
@@ -173,7 +173,7 @@ std::string worker::error(std::string err) {
 	return output;
 }
 
-std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::string> &params, std::map<std::string, std::string> &headers, std::string &ip, std::string &input){
+std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::string> &params, std::map<std::string, std::string> &headers, std::string &ip){
 	time_t cur_time = time(NULL);
 	
 	if(params["compact"] != "1") {
@@ -364,7 +364,7 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 		tor.completed++;
 		
 		std::stringstream record;
-		record << '(' << u.id << ',' << tor.id << ',' << cur_time << ')';
+		record << '(' << u.id << ',' << tor.id << ',' << cur_time << ", '" << ip << "')";
 		std::string record_str = record.str();
 		db->record_snatch(record_str);
 		
@@ -448,7 +448,7 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 	
 	std::string response = "d8:intervali";
 	response.reserve(350);
-	response += inttostr(conf->announce_interval+tor.seeders.size()); // ensure a more even distribution of announces/second
+	response += inttostr(conf->announce_interval+std::min((size_t)600, tor.seeders.size())); // ensure a more even distribution of announces/second
 	response += "e12:min intervali";
 	response += inttostr(conf->announce_interval);
 	response += "e5:peers";

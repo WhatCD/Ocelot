@@ -209,7 +209,7 @@ void mysql::do_flush_snatches() {
 		if(update_snatch_buffer == "") {
 			return; 
 		} else {
-			sql = "INSERT INTO xbt_snatched(uid,fid,tstamp) VALUES ";
+			sql = "INSERT INTO xbt_snatched(uid,fid,tstamp,IP) VALUES ";
 			sql += update_snatch_buffer;
 			update_snatch_buffer.clear();
 		}

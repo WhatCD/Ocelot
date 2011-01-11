@@ -98,7 +98,7 @@ connection_middleman::connection_middleman(int &listen_socket, sockaddr_in &addr
 	
 	connect_sock = accept(listen_socket, (sockaddr *) &address, &addr_len);
 	if(connect_sock == -1) {
-		std::cout << "Accept failed, errno " << errno << std::endl;
+		std::cout << "Accept failed, errno " << errno << ": " << strerror(errno) << std::endl;
 		mother->increment_open_connections(); // destructor decrements open connections
 		delete this;
 		return;
@@ -138,7 +138,6 @@ connection_middleman::~connection_middleman() {
 // Handler to read data from the socket, called by event loop when socket is readable
 void connection_middleman::handle_read(ev::io &watcher, int events_flags) {
 	read_event.stop();
-	timeout_event.stop();
 	
 	char buffer[conf->max_read_buffer + 1];
 	memset(buffer, 0, conf->max_read_buffer + 1);
@@ -167,6 +166,7 @@ void connection_middleman::handle_read(ev::io &watcher, int events_flags) {
 // Handler to write data to the socket, called by event loop when socket is writeable
 void connection_middleman::handle_write(ev::io &watcher, int events_flags) {
 	write_event.stop();
+	timeout_event.stop();
 	std::string http_response = "HTTP/1.1 200\r\nServer: Ocelot 1.0\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
 	http_response+=response;
 	send(connect_sock, http_response.c_str(), http_response.size(), MSG_NOSIGNAL);
@@ -176,5 +176,7 @@ void connection_middleman::handle_write(ev::io &watcher, int events_flags) {
 // After a middleman has been alive for timout_interval seconds, this is called
 void connection_middleman::handle_timeout(ev::timer &watcher, int events_flags) {
 	timeout_event.stop();
+	read_event.stop();
+	write_event.stop();
 	delete this;
 }

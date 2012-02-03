@@ -1,8 +1,12 @@
+#ifndef OCELOT_CONFIG_H
+#define OCELOT_CONFIG_H
+
 #include <string>
 
 class config {
 	public:
 		std::string host;
+		std::string site_host;
 		unsigned int port;
 		unsigned int max_connections;
 		unsigned int max_read_buffer;
@@ -13,10 +17,6 @@ class config {
 		unsigned int announce_interval;
 		int peers_timeout;
 		
-		unsigned int flush_torrents_interval;
-		unsigned int flush_users_interval;
-		unsigned int flush_peers_interval;
-		unsigned int flush_snatches_interval;
 		unsigned int reap_peers_interval;
 		
 		// MySQL
@@ -29,3 +29,5 @@ class config {
 		
 		config();
 };
+
+#endif

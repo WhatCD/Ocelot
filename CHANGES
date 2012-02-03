@@ -1,3 +1,21 @@
+-- 0.3 (2012-02-03)
+Add tokens
+Added a logging function
+Added DB_LOCK_TIMEOUT constant
+Added info command
+Added neutral leech
+Added transactions and backups around the peer/user queries
+Added working makefile
+Adding more debug to query outputs
+Changed flushing logic to prevent buildups
+Clean shutdown
+Don't print complete query if an error occurred
+Fixed thread visibility
+Flush every schedule
+More debug output
+New DB class with queue
+Nicer schedule display
+
 -- 0.2 alpha (2011-01-11)
 Bug fixes
 

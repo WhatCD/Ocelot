@@ -11,10 +11,7 @@ class schedule {
 		int last_opened_connections;
 		int counter;
 		
-		time_t next_flush_torrents;
-		time_t next_flush_users;
-		time_t next_flush_peers;
-		time_t next_flush_snatches;
+		time_t next_flush;
 		time_t next_reap_peers;
 	public:
 		schedule(connection_mother * mother_obj, worker * worker_obj, config* conf_obj, mysql * db_obj);

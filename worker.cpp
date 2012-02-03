@@ -5,6 +5,8 @@
 #include <sstream>
 #include <list>
 #include <vector>
+#include <set>
+#include <algorithm>
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -14,6 +16,7 @@
 #include "db.h"
 #include "worker.h"
 #include "misc_functions.h"
+#include "site_comm.h"
 
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
@@ -21,7 +24,20 @@
 #include <boost/bind.hpp>
 
 //---------- Worker - does stuff with input
-worker::worker(torrent_list &torrents, user_list &users, std::vector<std::string> &_whitelist, config * conf_obj, mysql * db_obj) : torrents_list(torrents), users_list(users), whitelist(_whitelist), conf(conf_obj), db(db_obj) {
+worker::worker(torrent_list &torrents, user_list &users, std::vector<std::string> &_whitelist, config * conf_obj, mysql * db_obj, site_comm &sc) : torrents_list(torrents), users_list(users), whitelist(_whitelist), conf(conf_obj), db(db_obj), s_comm(sc) {
+	status = OPEN;
+}
+bool worker::signal(int sig) {
+	if (status == OPEN) {
+		status = CLOSING;
+		std::cout << "closing tracker... press Ctrl-C again to terminate" << std::endl;
+		return false;
+	} else if (status == CLOSING) {
+		std::cout << "shutting down uncleanly" << std::endl;
+		return true;
+	} else {
+		return false;
+	}
 }
 std::string worker::work(std::string &input, std::string &ip) {
 	unsigned int input_length = input.length();
@@ -69,6 +85,10 @@ std::string worker::work(std::string &input, std::string &ip) {
 	if(action == INVALID) {
 		return error("invalid action");
 	}
+
+	if ((status != OPEN) && (action != UPDATE)) {
+		return error("The tracker is temporarily unavailable.");
+	}
 	
 	// Parse URL params
 	std::list<std::string> infohashes; // For scrape only
@@ -86,6 +106,7 @@ std::string worker::work(std::string &input, std::string &ip) {
 			if(action == SCRAPE && key == "info_hash") {
 				infohashes.push_back(value);
 			} else {
+
 				params[key] = value;
 			}
 			key.clear();
@@ -118,6 +139,7 @@ std::string worker::work(std::string &input, std::string &ip) {
 			
 			if(found_data) {
 				found_data = false; // dodge for getting around \r\n or just \n
+				std::transform(key.begin(), key.end(), key.begin(), ::tolower);
 				headers[key] = value;
 				key.clear();
 				value.clear();
@@ -186,6 +208,7 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 	
 	bool inserted = false; // If we insert the peer as opposed to update
 	bool update_torrent = false; // Whether or not we should update the torrent in the DB
+	bool expire_token = false; // Whether or not to expire a token after torrent completion
 	
 	std::map<std::string, std::string>::const_iterator peer_id_iterator = params.find("peer_id");
 	if(peer_id_iterator == params.end()) {
@@ -194,18 +217,19 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 	std::string peer_id = peer_id_iterator->second;
 	peer_id = hex_decode(peer_id);
 	
-	bool found = false; // Found client in whitelist?
-	for(unsigned int i = 0; i < whitelist.size(); i++) {
-		if(peer_id.find(whitelist[i]) == 0) {
-			found = true;
-			break;
+	if(whitelist.size() > 0) {
+		bool found = false; // Found client in whitelist?
+		for(unsigned int i = 0; i < whitelist.size(); i++) {
+			if(peer_id.find(whitelist[i]) == 0) {
+				found = true;
+				break;
+			}
+		}
+
+		if(!found) {
+			return error("Your client is not on the whitelist");
 		}
 	}
-
-	if(!found) {
-		return error("Your client is not on the whitelist");
-	}
-	
 	
 	peer * p;
 	peer_list::iterator i;
@@ -246,29 +270,33 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 	p->left = left;
 	long long upspeed = 0;
 	long long downspeed = 0;
+	long long real_uploaded_change = 0;
+	long long real_downloaded_change = 0;
 	
 	if(inserted || params["event"] == "started" || uploaded < p->uploaded || downloaded < p->downloaded) {
 		//New peer on this torrent
 		update_torrent = true;
 		p->userid = u.id;
 		p->peer_id = peer_id;
-		p->user_agent = headers["User-Agent"];
+		p->user_agent = headers["user-agent"];
 		p->first_announced = cur_time;
 		p->last_announced = 0;
 		p->uploaded = uploaded;
 		p->downloaded = downloaded;
 		p->announces = 1;
 	} else {
-		p->announces++;
-		
 		long long uploaded_change = 0;
 		long long downloaded_change = 0;
+		p->announces++;
+		
 		if(uploaded != p->uploaded) {
 			uploaded_change = uploaded - p->uploaded;
+			real_uploaded_change = uploaded_change;
 			p->uploaded = uploaded;
 		}
 		if(downloaded != p->downloaded) {
 			downloaded_change = downloaded - p->downloaded;
+			real_downloaded_change = downloaded_change;
 			p->downloaded = downloaded;
 		}
 		if(uploaded_change || downloaded_change) {
@@ -282,8 +310,18 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 				upspeed = uploaded_change / (cur_time - p->last_announced);
 				downspeed = downloaded_change / (cur_time - p->last_announced);
 			}
-			
-			if(tor.free_torrent == true) {
+			std::set<int>::iterator sit = tor.tokened_users.find(u.id);
+			if (tor.free_torrent == NEUTRAL) {
+				downloaded_change = 0;
+				uploaded_change = 0;
+			} else if(tor.free_torrent == FREE || sit != tor.tokened_users.end()) {
+				if(sit != tor.tokened_users.end()) {
+					expire_token = true;
+					std::stringstream record;
+					record << '(' << u.id << ',' << tor.id << ',' << downloaded_change << ')';
+					std::string record_str = record.str();
+					db->record_token(record_str);
+				}
 				downloaded_change = 0;
 			}
 			
@@ -371,6 +409,11 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 		// User is a seeder now!
 		tor.seeders.insert(std::pair<std::string, peer>(peer_id, *p));
 		tor.leechers.erase(peer_id);
+		if(expire_token) {
+			(&s_comm)->expire_token(tor.id, u.id);
+			tor.tokened_users.erase(u.id);
+		}
+		// do cache expire
 	}
 
 	std::string peers;
@@ -444,8 +487,8 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 	std::stringstream record;
 	record << '(' << u.id << ',' << tor.id << ',' << active << ',' << uploaded << ',' << downloaded << ',' << upspeed << ',' << downspeed << ',' << left << ',' << (cur_time - p->first_announced) << ',' << p->announces << ',';
 	std::string record_str = record.str();
-	db->record_peer(record_str, ip, peer_id, headers["User-Agent"]);
-	
+	db->record_peer(record_str, ip, peer_id, headers["user-agent"]);
+
 	std::string response = "d8:intervali";
 	response.reserve(350);
 	response += inttostr(conf->announce_interval+std::min((size_t)600, tor.seeders.size())); // ensure a more even distribution of announces/second
@@ -499,38 +542,49 @@ std::string worker::scrape(const std::list<std::string> &infohashes) {
 
 //TODO: Restrict to local IPs
 std::string worker::update(std::map<std::string, std::string> &params) {
-	std::cout << "Got update" << std::endl;
 	if(params["action"] == "change_passkey") {
 		std::string oldpasskey = params["oldpasskey"];
 		std::string newpasskey = params["newpasskey"];
-		users_list[newpasskey] = users_list[oldpasskey];
-		users_list.erase(oldpasskey);
-		std::cout << "changed passkey from " << oldpasskey << " to " << newpasskey << " for user " << users_list[newpasskey].id << std::endl;
+		user_list::iterator i = users_list.find(oldpasskey);
+		if (i == users_list.end()) {
+			std::cout << "No user with passkey " << oldpasskey << " exists when attempting to change passkey to " << newpasskey << std::endl;
+		} else {
+			users_list[newpasskey] = i->second;;
+			users_list.erase(oldpasskey);
+			std::cout << "changed passkey from " << oldpasskey << " to " << newpasskey << " for user " << i->second.id << std::endl;
+		}
 	} else if(params["action"] == "add_torrent") {
 		torrent t;
 		t.id = strtolong(params["id"]);
 		std::string info_hash = params["info_hash"];
 		info_hash = hex_decode(info_hash);
-		bool fl = false;
-		if(params["freetorrent"] == "1") {
-			fl = true;
+		if(params["freetorrent"] == "0") {
+			t.free_torrent = NORMAL;
+		} else if(params["freetorrent"] == "1") {
+			t.free_torrent = FREE;
+		} else {
+			t.free_torrent = NEUTRAL;
 		}
 		t.balance = 0;
 		t.completed = 0;
 		t.last_selected_seeder = "";
-		t.free_torrent = fl;
 		torrents_list[info_hash] = t;
-		std::cout << "Added torrent " << t.id << std::endl;
+		std::cout << "Added torrent " << t.id<< ". FL: " << t.free_torrent << " " << params["freetorrent"] << std::endl;
 	} else if(params["action"] == "update_torrent") {
 		std::string info_hash = params["info_hash"];
 		info_hash = hex_decode(info_hash);
-		bool fl = false;
-		if(params["freetorrent"] == "1") {
-			fl = true;
+		freetype fl;
+		if(params["freetorrent"] == "0") {
+			fl = NORMAL;
+		} else if(params["freetorrent"] == "1") {
+			fl = FREE;
+		} else {
+			fl = NEUTRAL;
 		}
-		if(torrents_list.find(info_hash) != torrents_list.end()) {
-			torrents_list[info_hash].free_torrent = fl;
-			std::cout << "Updated torrent " << torrents_list[info_hash].id << " to FL " << fl << std::endl;
+		auto torrent_it = torrents_list.find(info_hash);
+		if (torrent_it != torrents_list.end()) {
+			torrent_it->second.free_torrent = fl;
+			std::cout << "Updated torrent " << torrent_it->second.id << " to FL " << fl << std::endl;
 		} else {
 			std::cout << "Failed to find torrent " << info_hash << " to FL " << fl << std::endl;
 		}
@@ -538,25 +592,49 @@ std::string worker::update(std::map<std::string, std::string> &params) {
 		// Each decoded infohash is exactly 20 characters long.
 		std::string info_hashes = params["info_hashes"];
 		info_hashes = hex_decode(info_hashes);
-		bool fl = false;
-		if(params["freetorrent"] == "1") {
-			fl = true;
+		freetype fl;
+		if(params["freetorrent"] == "0") {
+			fl = NORMAL;
+		} else if(params["freetorrent"] == "1") {
+			fl = FREE;
+		} else {
+			fl = NEUTRAL;
 		}
 		for(unsigned int pos = 0; pos < info_hashes.length(); pos += 20) {
 			std::string info_hash = info_hashes.substr(pos, 20);
-			if(torrents_list.find(info_hash) != torrents_list.end()) {
-				torrents_list[info_hash].free_torrent = fl;
-				std::cout << "Updated torrent " << torrents_list[info_hash].id << " to FL " << fl << std::endl;
+			auto torrent_it = torrents_list.find(info_hash);
+			if (torrent_it != torrents_list.end()) {
+				torrent_it->second.free_torrent = fl;
+				std::cout << "Updated torrent " << torrent_it->second.id << " to FL " << fl << std::endl;
 			} else {
 				std::cout << "Failed to find torrent " << info_hash << " to FL " << fl << std::endl;
 			}
 		}
+	} else if(params["action"] == "add_token") {
+		std::string info_hash = hex_decode(params["info_hash"]);
+		int user_id = atoi(params["userid"].c_str());
+		auto torrent_it = torrents_list.find(info_hash);
+		if (torrent_it != torrents_list.end()) {
+			torrent_it->second.tokened_users.insert(user_id);
+		} else {
+			std::cout << "Failed to find torrent to add a token for user " << user_id << std::endl;
+		}
+	} else if(params["action"] == "remove_token") {
+		std::string info_hash = hex_decode(params["info_hash"]);
+		int user_id = atoi(params["userid"].c_str());
+		auto torrent_it = torrents_list.find(info_hash);
+		if (torrent_it != torrents_list.end()) {
+			torrent_it->second.tokened_users.erase(user_id);
+		} else {
+			std::cout << "Failed to find torrent " << info_hash << " to remove token for user " << user_id << std::endl;
+		}
 	} else if(params["action"] == "delete_torrent") {
 		std::string info_hash = params["info_hash"];
 		info_hash = hex_decode(info_hash);
-		if(torrents_list.find(info_hash) != torrents_list.end()) {
-			std::cout << "Deleting torrent " << torrents_list[info_hash].id << std::endl;
-			torrents_list.erase(info_hash);
+		auto torrent_it = torrents_list.find(info_hash);
+		if (torrent_it != torrents_list.end()) {
+			std::cout << "Deleting torrent " << torrent_it->second.id << std::endl;
+			torrents_list.erase(torrent_it);
 		} else {
 			std::cout << "Failed to find torrent " << info_hash << " to delete " << std::endl;
 		}
@@ -586,8 +664,13 @@ std::string worker::update(std::map<std::string, std::string> &params) {
 		if(params["can_leech"] == "0") {
 			can_leech = false;
 		}
-		users_list[passkey].can_leech = can_leech;
-		std::cout << "Updated user " << passkey << std::endl;
+		user_list::iterator i = users_list.find(passkey);
+		if (i == users_list.end()) {
+			std::cout << "No user with passkey " << passkey << " found when attempting to change leeching status!" << std::endl;
+		} else {
+			users_list[passkey].can_leech = can_leech;
+			std::cout << "Updated user " << passkey << std::endl;
+		}
 	} else if(params["action"] == "add_whitelist") {
 		std::string peer_id = params["peer_id"];
 		whitelist.push_back(peer_id);
@@ -616,6 +699,17 @@ std::string worker::update(std::map<std::string, std::string> &params) {
 		unsigned int interval = strtolong(params["new_announce_interval"]);
 		conf->announce_interval = interval;
 		std::cout << "Edited announce interval to " << interval << std::endl;
+	} else if(params["action"] == "info_torrent") {
+		std::string info_hash_hex = params["info_hash"];
+		std::string info_hash = hex_decode(info_hash_hex);
+		std::cout << "Info for torrent '" << info_hash_hex << "'" << std::endl;
+		auto torrent_it = torrents_list.find(info_hash);
+		if (torrent_it != torrents_list.end()) {
+			std::cout << "Torrent " << torrent_it->second.id
+				<< ", freetorrent = " << torrent_it->second.free_torrent << std::endl;
+		} else {
+			std::cout << "Failed to find torrent " << info_hash_hex << std::endl;
+		}
 	}
 	return "success";
 }
@@ -626,6 +720,7 @@ void worker::reap_peers() {
 }
 
 void worker::do_reap_peers() {
+	db->logger_ptr->log("Began worker::do_reap_peers()");
 	time_t cur_time = time(NULL);
 	unsigned int reaped = 0;
 	std::unordered_map<std::string, torrent>::iterator i = torrents_list.begin();
@@ -657,4 +752,5 @@ void worker::do_reap_peers() {
 		}
 	}
 	std::cout << "Reaped " << reaped << " peers" << std::endl;
+	db->logger_ptr->log("Completed worker::do_reap_peers()");
 }

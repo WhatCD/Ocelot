@@ -10,10 +10,6 @@ schedule::schedule(connection_mother * mother_obj, worker* worker_obj, config* c
 	counter = 0;
 	last_opened_connections = 0;
 	
-	next_flush_torrents = time(NULL) + conf->flush_torrents_interval;
-	next_flush_users = time(NULL) + conf->flush_users_interval + 10;
-	next_flush_peers = time(NULL) + conf->flush_peers_interval + 20;
-	next_flush_snatches = time(NULL) + conf->flush_snatches_interval + 30;
 	next_reap_peers = time(NULL) + conf->reap_peers_interval + 40;
 }
 //---------- Schedule - gets called every schedule_interval seconds
@@ -25,28 +21,16 @@ void schedule::handle(ev::timer &watcher, int events_flags) {
 		<< ((mother->get_opened_connections()-last_opened_connections)/conf->schedule_interval) << "/s" << std::endl;
 	}
 
+	if ((work->get_status() == CLOSING) && db->all_clear()) {
+		std::cout << "all clear, shutting down" << std::endl;
+		exit(0);
+	}
+
 	last_opened_connections = mother->get_opened_connections();
 	
+	db->flush();
+
 	time_t cur_time = time(NULL);
-	if(cur_time > next_flush_torrents) {
-		db->flush_torrents();
-		next_flush_torrents = cur_time + conf->flush_torrents_interval;
-	}
-	
-	if(cur_time > next_flush_users) {
-		db->flush_users();
-		next_flush_users = cur_time + conf->flush_users_interval;
-	}
-	
-	if(cur_time > next_flush_snatches) {
-		db->flush_snatches();
-		next_flush_snatches = cur_time + conf->flush_snatches_interval;
-	}
-	
-	if(cur_time > next_flush_peers) {
-		db->flush_peers();
-		next_flush_peers = cur_time + conf->flush_peers_interval;
-	}
 
 	if(cur_time > next_reap_peers) {
 		work->reap_peers();

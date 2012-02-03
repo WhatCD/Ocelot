@@ -44,7 +44,6 @@ THE WORKER
 
 
 
-
 // THE MOTHER - Spawns connection middlemen
 class connection_mother {
 	private:
@@ -67,7 +66,7 @@ class connection_mother {
 		
 		int get_open_connections() { return open_connections; }
 		int get_opened_connections() { return opened_connections; }
-		
+
 		void handle_connect(ev::io &watcher, int events_flags);
 		~connection_mother();
 };

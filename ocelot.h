@@ -2,6 +2,7 @@
 #include <map>
 #include <vector>
 #include <unordered_map>
+#include <set>
 #include <boost/thread/thread.hpp>
 
 typedef struct {
@@ -21,15 +22,18 @@ typedef struct {
 
 typedef std::map<std::string, peer> peer_list;
 
+enum freetype { NORMAL, FREE, NEUTRAL };
+
 typedef struct {
 	int id;
 	time_t last_seeded;
 	long long balance;
 	int completed;
-	bool free_torrent;
+	freetype free_torrent;
 	std::map<std::string, peer> seeders;
 	std::map<std::string, peer> leechers;
 	std::string last_selected_seeder;
+	std::set<int> tokened_users;
 	time_t last_flushed;
 } torrent;
 

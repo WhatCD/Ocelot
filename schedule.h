@@ -8,7 +8,7 @@ class schedule {
 		worker * work;
 		config * conf;
 		mysql * db;
-		int last_opened_connections;
+		uint64_t last_opened_connections;
 		int counter;
 		
 		time_t next_flush;

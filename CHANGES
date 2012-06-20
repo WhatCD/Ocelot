@@ -1,3 +1,11 @@
+-- 0.4 (2012-06-20)
+Convert all headers to lowercase
+Don't show users to themselves (patch by GrecKo)
+Don't write peer updates to the binlog
+Fix incorrect handling of "corrupt" stat
+Search for peer in leecher list if not found in seeders list
+Sort response dictionary according to BitTorrent specs
+
 -- 0.3 (2012-02-03)
 Add tokens
 Added a logging function

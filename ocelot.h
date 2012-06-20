@@ -8,12 +8,13 @@
 typedef struct {
 	int userid;
 	std::string peer_id;
-	std::string user_agent;
+//	std::string user_agent;
 	std::string ip_port;
 	std::string ip;
 	unsigned int port;
-	long long uploaded;
-	long long downloaded;
+	int64_t uploaded;
+	int64_t downloaded;
+	int64_t corrupt;
 	uint64_t left;
 	time_t last_announced;
 	time_t first_announced;
@@ -27,7 +28,7 @@ enum freetype { NORMAL, FREE, NEUTRAL };
 typedef struct {
 	int id;
 	time_t last_seeded;
-	long long balance;
+	int64_t balance;
 	int completed;
 	freetype free_torrent;
 	std::map<std::string, peer> seeders;

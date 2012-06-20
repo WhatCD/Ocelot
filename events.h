@@ -55,8 +55,8 @@ class connection_mother {
 		mysql * db;
 		ev::timer schedule_event;
 		
-		unsigned long opened_connections;
 		unsigned int open_connections;
+		uint64_t opened_connections;
 		
 	public: 
 		connection_mother(worker * worker_obj, config * config_obj, mysql * db_obj);
@@ -64,8 +64,8 @@ class connection_mother {
 		void increment_open_connections() { open_connections++; }
 		void decrement_open_connections() { open_connections--; }
 		
-		int get_open_connections() { return open_connections; }
-		int get_opened_connections() { return opened_connections; }
+		unsigned int get_open_connections() { return open_connections; }
+		uint64_t get_opened_connections() { return opened_connections; }
 
 		void handle_connect(ev::io &watcher, int events_flags);
 		~connection_mother();

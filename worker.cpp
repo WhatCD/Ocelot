@@ -1,5 +1,6 @@
 #include <cmath>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <map>
 #include <sstream>
@@ -202,12 +203,14 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 		return error("Your client does not support compact announces");
 	}
 	
-	long long left = strtolonglong(params["left"]);
-	long long uploaded = std::max(0ll, strtolonglong(params["uploaded"]));
-	long long downloaded = std::max(0ll, strtolonglong(params["downloaded"]));
+	int64_t left = strtolonglong(params["left"]);
+	int64_t uploaded = std::max((int64_t)0, strtolonglong(params["uploaded"]));
+	int64_t downloaded = std::max((int64_t)0, strtolonglong(params["downloaded"]));
+	int64_t corrupt = strtolonglong(params["corrupt"]);
 	
 	bool inserted = false; // If we insert the peer as opposed to update
 	bool update_torrent = false; // Whether or not we should update the torrent in the DB
+	bool completed_torrent = false; // Whether or not the current announcement is a snatch
 	bool expire_token = false; // Whether or not to expire a token after torrent completion
 	
 	std::map<std::string, std::string>::const_iterator peer_id_iterator = params.find("peer_id");
@@ -230,11 +233,14 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 			return error("Your client is not on the whitelist");
 		}
 	}
+	if(params["event"] == "completed") {
+		completed_torrent = true;
+	}
 	
 	peer * p;
 	peer_list::iterator i;
 	// Insert/find the peer in the torrent list
-	if(left > 0 || params["event"] == "completed") {
+	if(left > 0 || completed_torrent) {
 		if(u.can_leech == false) {
 			return error("Access denied, leeching forbidden");
 		}
@@ -253,12 +259,25 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 	} else {
 		i = tor.seeders.find(peer_id);
 		if(i == tor.seeders.end()) {
-			peer new_peer;
-			std::pair<peer_list::iterator, bool> insert 
-			= tor.seeders.insert(std::pair<std::string, peer>(peer_id, new_peer));
-			
-			p = &(insert.first->second);
-			inserted = true;
+			i = tor.leechers.find(peer_id);
+			if(i == tor.leechers.end()) {
+				peer new_peer;
+				std::pair<peer_list::iterator, bool> insert 
+				= tor.seeders.insert(std::pair<std::string, peer>(peer_id, new_peer));
+				
+				p = &(insert.first->second);
+				inserted = true;
+			} else {
+				p = &i->second;
+				std::pair<peer_list::iterator, bool> insert
+				= tor.seeders.insert(std::pair<std::string, peer>(peer_id, *p));
+				tor.leechers.erase(peer_id);
+				if(downloaded > 0) {
+					std::cout << "Found unreported snatch from user " << u.id << " on torrent " << tor.id << std::endl;
+				}
+				p = &(insert.first->second);
+//				completed_torrent = true; // Not sure if we want to do this. Might cause massive spam for broken clients (e.g. µTorrent 3)
+			}
 		} else {
 			p = &i->second;
 		}
@@ -268,25 +287,30 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 	
 	// Update the peer
 	p->left = left;
-	long long upspeed = 0;
-	long long downspeed = 0;
-	long long real_uploaded_change = 0;
-	long long real_downloaded_change = 0;
+	int64_t upspeed = 0;
+	int64_t downspeed = 0;
+	int64_t real_uploaded_change = 0;
+	int64_t real_downloaded_change = 0;
 	
-	if(inserted || params["event"] == "started" || uploaded < p->uploaded || downloaded < p->downloaded) {
+	if(inserted || params["event"] == "started") {
 		//New peer on this torrent
 		update_torrent = true;
 		p->userid = u.id;
 		p->peer_id = peer_id;
-		p->user_agent = headers["user-agent"];
 		p->first_announced = cur_time;
 		p->last_announced = 0;
 		p->uploaded = uploaded;
 		p->downloaded = downloaded;
+		p->corrupt = corrupt;
 		p->announces = 1;
+	} else if(uploaded < p->uploaded || downloaded < p->downloaded) {
+		p->announces++;
+		p->uploaded = uploaded;
+		p->downloaded = downloaded;
 	} else {
-		long long uploaded_change = 0;
-		long long downloaded_change = 0;
+		int64_t uploaded_change = 0;
+		int64_t downloaded_change = 0;
+		int64_t corrupt_change = 0;
 		p->announces++;
 		
 		if(uploaded != p->uploaded) {
@@ -299,11 +323,15 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 			real_downloaded_change = downloaded_change;
 			p->downloaded = downloaded;
 		}
+		if(corrupt != p->corrupt) {
+			corrupt_change = corrupt - p->corrupt;
+			p->corrupt = corrupt;
+			tor.balance -= corrupt_change;
+			update_torrent = true;
+		}
 		if(uploaded_change || downloaded_change) {
-			long corrupt = strtolong(params["corrupt"]);
 			tor.balance += uploaded_change;
 			tor.balance -= downloaded_change;
-			tor.balance -= corrupt;
 			update_torrent = true;
 			
 			if(cur_time > p->last_announced) {
@@ -396,7 +424,7 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 				std::cout << "Tried and failed to remove leecher from torrent " << tor.id << std::endl;
 			}
 		}
-	} else if(params["event"] == "completed") {
+	} else if(completed_torrent) {
 		snatches = 1;
 		update_torrent = true;
 		tor.completed++;
@@ -430,8 +458,7 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 					i = tor.seeders.begin();
 				} else {
 					i = tor.seeders.find(tor.last_selected_seeder);
-					i++;
-					if(i == tor.seeders.end()) {
+					if(i == tor.seeders.end() || ++i == tor.seeders.end()) {
 						i = tor.seeders.begin();
 					}
 				}
@@ -442,13 +469,21 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 					end = tor.seeders.end();
 				} else {
 					end = i;
-					end--;
+					if(--end == tor.seeders.begin()) {
+						end++;
+						i++;
+					}
 				}
 				
 				// Add seeders
 				while(i != end && found_peers < numwant) {
 					if(i == tor.seeders.end()) {
 						i = tor.seeders.begin();
+					}
+					if (i->second.userid == p->userid) //Don't add the peer to the peerlist if it's the same user
+					{
+						i++;
+						continue;
 					}
 					peers.append(i->second.ip_port);
 					found_peers++;
@@ -459,7 +494,7 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 
 			if(found_peers < numwant && tor.leechers.size() > 1) {
 				for(peer_list::const_iterator i = tor.leechers.begin(); i != tor.leechers.end() && found_peers < numwant; i++) {
-					if(i->second.ip_port == p->ip_port) { // Don't show leechers themselves
+					if(i->second.ip_port == p->ip_port || i->second.userid == p->userid) { // Don't show users themselves
 						continue; 
 					}
 					found_peers++;
@@ -469,6 +504,9 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 			}
 		} else if(tor.leechers.size() > 0) { // User is a seeder, and we have leechers!
 			for(peer_list::const_iterator i = tor.leechers.begin(); i != tor.leechers.end() && found_peers < numwant; i++) {
+				if(i->second.userid == p->userid) { // Don't show users themselves
+						continue; 
+				}
 				found_peers++;
 				peers.append(i->second.ip_port);
 			}
@@ -485,12 +523,18 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 	}
 	
 	std::stringstream record;
-	record << '(' << u.id << ',' << tor.id << ',' << active << ',' << uploaded << ',' << downloaded << ',' << upspeed << ',' << downspeed << ',' << left << ',' << (cur_time - p->first_announced) << ',' << p->announces << ',';
+	record << '(' << u.id << ',' << tor.id << ',' << active << ',' << uploaded << ',' << downloaded << ',' << upspeed << ',' << downspeed << ',' << left << ',' << corrupt << ',' << (cur_time - p->first_announced) << ',' << p->announces << ',';
 	std::string record_str = record.str();
 	db->record_peer(record_str, ip, peer_id, headers["user-agent"]);
 
-	std::string response = "d8:intervali";
+	std::string response = "d8:completei";
 	response.reserve(350);
+	response += inttostr(tor.seeders.size());
+	response += "e10:downloadedi";
+	response += inttostr(tor.completed);
+	response += "e10:incompletei";
+	response += inttostr(tor.leechers.size());
+	response += "e8:intervali";
 	response += inttostr(conf->announce_interval+std::min((size_t)600, tor.seeders.size())); // ensure a more even distribution of announces/second
 	response += "e12:min intervali";
 	response += inttostr(conf->announce_interval);
@@ -502,14 +546,7 @@ std::string worker::announce(torrent &tor, user &u, std::map<std::string, std::s
 		response += ":";
 		response += peers;
 	}
-	response += "8:completei";
-	response += inttostr(tor.seeders.size());
-	response += "e10:incompletei";
-	response += inttostr(tor.leechers.size());
-	response += "e10:downloadedi";
-	response += inttostr(tor.completed);
-	response += "ee";
-	
+	response += "e";	
 	return response;
 }
 

@@ -167,7 +167,7 @@ void connection_middleman::handle_read(ev::io &watcher, int events_flags) {
 void connection_middleman::handle_write(ev::io &watcher, int events_flags) {
 	write_event.stop();
 	timeout_event.stop();
-	std::string http_response = "HTTP/1.1 200\r\nServer: Ocelot 1.0\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
+	std::string http_response = "HTTP/1.1 200 OK\r\nServer: Ocelot 1.0\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
 	http_response+=response;
 	send(connect_sock, http_response.c_str(), http_response.size(), MSG_NOSIGNAL);
 	delete this;

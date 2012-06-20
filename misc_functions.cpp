@@ -9,9 +9,9 @@ long strtolong(const std::string& str) {
 	return i;
 }
 
-long long strtolonglong(const std::string& str) {
+int64_t strtolonglong(const std::string& str) {
 	std::istringstream stream (str);
-	long long i = 0;
+	int64_t i = 0;
 	stream >> i;
 	return i;
 }

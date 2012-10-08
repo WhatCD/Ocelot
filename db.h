@@ -46,6 +46,7 @@ class mysql {
 		void flush_snatches();
 		void flush_peers();
 		void flush_tokens();
+		void clear_peer_data();
 
 	public:
 		mysql(std::string mysql_db, std::string mysql_host, std::string username, std::string password);

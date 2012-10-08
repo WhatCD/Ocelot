@@ -86,6 +86,7 @@ class connection_middleman {
 		connection_mother * mother;
 		worker * work;
 		sockaddr_in client_addr;
+		bool gzip;
 	
 	public:
 		connection_middleman(int &listen_socket, sockaddr_in &address, socklen_t &addr_len, worker* work, connection_mother * mother_arg, config * config_obj);

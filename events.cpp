@@ -94,7 +94,7 @@ connection_mother::~connection_mother()
 //---------- Connection middlemen - these little guys live until their connection is closed
 
 connection_middleman::connection_middleman(int &listen_socket, sockaddr_in &address, socklen_t &addr_len, worker * new_work, connection_mother * mother_arg, config * config_obj) : 
-	conf(config_obj), mother (mother_arg), work(new_work) {
+	conf(config_obj), mother (mother_arg), work(new_work), gzip(false) {
 	
 	connect_sock = accept(listen_socket, (sockaddr *) &address, &addr_len);
 	if(connect_sock == -1) {
@@ -155,7 +155,7 @@ void connection_middleman::handle_read(ev::io &watcher, int events_flags) {
 	std::string ip_str = ip;
 	
 	//--- CALL WORKER
-	response = work->work(stringbuf, ip_str);
+	response = work->work(stringbuf, ip_str, gzip);
 	
 	// Find out when the socket is writeable. 
 	// The loop in connection_mother will call handle_write when it is. 
@@ -167,8 +167,12 @@ void connection_middleman::handle_read(ev::io &watcher, int events_flags) {
 void connection_middleman::handle_write(ev::io &watcher, int events_flags) {
 	write_event.stop();
 	timeout_event.stop();
-	std::string http_response = "HTTP/1.1 200 OK\r\nServer: Ocelot 1.0\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n";
-	http_response+=response;
+	std::string http_response = "HTTP/1.1 200 OK\r\nServer: Ocelot 1.0\r\nContent-Type: text/plain\r\n";
+	if (gzip) {
+		http_response += "Content-Encoding: gzip\r\n";
+	}
+	http_response += "Connection: close\r\n\r\n";
+	http_response += response;
 	send(connect_sock, http_response.c_str(), http_response.size(), MSG_NOSIGNAL);
 	delete this;
 }

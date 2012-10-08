@@ -28,7 +28,28 @@ mysql::mysql(std::string mysql_db, std::string mysql_host, std::string username,
         update_peer_buffer = "";
         update_snatch_buffer = "";
 
+
         logger_ptr = logger::get_instance();
+	std::cout << "Clearing xbt_files_users and resetting peer counts...";
+	clear_peer_data();
+	std::cout << "done" << std::endl;
+}
+
+void mysql::clear_peer_data() {
+	try {
+		mysqlpp::Query query = conn.query("TRUNCATE xbt_files_users;");
+		if (!query.exec()) {
+			std::cerr << "Unable to truncate xbt_files_users!" << std::endl;
+		}
+		query = conn.query("UPDATE torrents SET Seeders = 0, Leechers = 0;");
+		if (!query.exec()) {
+			std::cerr << "Unable to reset seeder and leecher count!" << std::endl;
+		}
+	} catch (const mysqlpp::BadQuery &er) {
+		std::cerr << "Query error: " << er.what() << " in clear_peer_data" << std::endl;
+	} catch (const mysqlpp::Exception &er) {
+		std::cerr << "Query error: " << er.what() << " in clear_peer_data" << std::endl;
+	}
 }
 
 void mysql::load_torrents(std::unordered_map<std::string, torrent> &torrents) {

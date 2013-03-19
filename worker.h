@@ -23,15 +23,17 @@ class worker {
 		void do_reap_peers();
 		void do_reap_del_reasons();
 		tracker_status status;
-		site_comm s_comm;
+		time_t cur_time;
+		site_comm * s_comm;
 		std::string get_del_reason(int code);
 		boost::mutex del_reasons_lock;
-		bool user_is_visible(user *u);
+		bool peer_is_visible(user *u, peer *p);
 
 	public:
-		worker(torrent_list &torrents, user_list &users, std::vector<std::string> &_whitelist, config * conf_obj, mysql * db_obj, site_comm &sc);
+		worker(torrent_list &torrents, user_list &users, std::vector<std::string> &_whitelist, config * conf_obj, mysql * db_obj, site_comm * sc);
 		std::string work(std::string &input, std::string &ip, bool &gzip);
 		std::string error(std::string err);
+		std::string warning(std::string err);
 		std::string announce(torrent &tor, user &u, std::map<std::string, std::string> &params, std::map<std::string, std::string> &headers, std::string &ip, bool &gzip);
 		std::string scrape(const std::list<std::string> &infohashes, std::map<std::string, std::string> &headers, bool &gzip);
 		std::string update(std::map<std::string, std::string> &params);

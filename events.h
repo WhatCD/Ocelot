@@ -53,13 +53,14 @@ class connection_mother {
 		worker * work;
 		config * conf;
 		mysql * db;
+		site_comm * sc;
 		ev::timer schedule_event;
 		
 		unsigned int open_connections;
 		uint64_t opened_connections;
 		
 	public: 
-		connection_mother(worker * worker_obj, config * config_obj, mysql * db_obj);
+		connection_mother(worker * worker_obj, config * config_obj, mysql * db_obj, site_comm * sc_obj);
 		
 		void increment_open_connections() { open_connections++; }
 		void decrement_open_connections() { open_connections--; }

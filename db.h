@@ -7,14 +7,13 @@
 #include <queue>
 #include <boost/thread/mutex.hpp>
 
-#include "logger.h"
-
 class mysql {
 	private:
 		mysqlpp::Connection conn;
 		std::string update_user_buffer;
 		std::string update_torrent_buffer;
-		std::string update_peer_buffer;
+		std::string update_heavy_peer_buffer;
+		std::string update_light_peer_buffer;
 		std::string update_snatch_buffer;
 		std::string update_token_buffer;
 		
@@ -29,12 +28,12 @@ class mysql {
 
 		// These locks prevent more than one thread from reading/writing the buffers.
 		// These should be held for the minimum time possible.
-		boost::mutex user_buffer_lock;
-		boost::mutex torrent_buffer_lock;
-		boost::mutex peer_buffer_lock;
-		boost::mutex snatch_buffer_lock;
-		boost::mutex user_token_lock;
-		
+		boost::mutex user_queue_lock;
+		boost::mutex torrent_queue_lock;
+		boost::mutex peer_queue_lock;
+		boost::mutex snatch_queue_lock;
+		boost::mutex token_queue_lock;
+
 		void do_flush_users();
 		void do_flush_torrents();
 		void do_flush_snatches();
@@ -49,6 +48,8 @@ class mysql {
 		void clear_peer_data();
 
 	public:
+		bool verbose_flush;
+
 		mysql(std::string mysql_db, std::string mysql_host, std::string username, std::string password);
 		void load_torrents(std::unordered_map<std::string, torrent> &torrents);
 		void load_users(std::unordered_map<std::string, user> &users);
@@ -58,7 +59,8 @@ class mysql {
 		void record_user(std::string &record); // (id,uploaded_change,downloaded_change)
 		void record_torrent(std::string &record); // (id,seeders,leechers,snatched_change,balance)
 		void record_snatch(std::string &record); // (uid,fid,tstamp)
-		void record_peer(std::string &record, std::string &ip, std::string &peer_id, std::string &useragent); // (uid,fid,active,peerid,useragent,ip,uploaded,downloaded,upspeed,downspeed,left,timespent,announces)
+		void record_peer(std::string &record, std::string &ip, std::string &peer_id, std::string &useragent); // (uid,fid,active,peerid,useragent,ip,uploaded,downloaded,upspeed,downspeed,left,timespent,announces,tstamp)
+		void record_peer(std::string &record, std::string &peer_id); // (fid,peerid,timespent,announces,tstamp)
 		void record_token(std::string &record);
 
 		void flush();
@@ -66,8 +68,6 @@ class mysql {
 		bool all_clear();
 		
 		boost::mutex torrent_list_mutex;
-
-		logger* logger_ptr;
 };
 
 #pragma GCC visibility pop

@@ -14,7 +14,7 @@
 
 //---------- Connection mother - spawns middlemen and lets them deal with the connection
 
-connection_mother::connection_mother(worker * worker_obj, config * config_obj, mysql * db_obj) : work(worker_obj), conf(config_obj), db(db_obj) {
+connection_mother::connection_mother(worker * worker_obj, config * config_obj, mysql * db_obj, site_comm * sc_obj) : work(worker_obj), conf(config_obj), db(db_obj), sc(sc_obj) {
 	open_connections = 0;
 	opened_connections = 0;
 	
@@ -25,7 +25,7 @@ connection_mother::connection_mother(worker * worker_obj, config * config_obj, m
 	
 	// Stop old sockets from hogging the port
 	int yes = 1;
-	if(setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+	if (setsockopt(listen_socket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
 		std::cout << "Could not reuse socket" << std::endl;
 	}
 	
@@ -42,26 +42,26 @@ connection_mother::connection_mother(worker * worker_obj, config * config_obj, m
 	address.sin_port = htons(conf->port);
 	
 	// Bind
-	if(bind(listen_socket, (sockaddr *) &address, sizeof(address)) == -1) {
+	if (bind(listen_socket, (sockaddr *) &address, sizeof(address)) == -1) {
 		std::cout << "Bind failed " << errno << std::endl;
 	}
 	
 	// Listen
-	if(listen(listen_socket, conf->max_connections) == -1) {
+	if (listen(listen_socket, conf->max_connections) == -1) {
 		std::cout << "Listen failed" << std::endl;
 	}
 	
 	// Set non-blocking
 	int flags = fcntl(listen_socket, F_GETFL);
-	if(flags == -1) {
+	if (flags == -1) {
 		std::cout << "Could not get socket flags" << std::endl;
 	}
-	if(fcntl(listen_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
+	if (fcntl(listen_socket, F_SETFL, flags | O_NONBLOCK) == -1) {
 		std::cout << "Could not set non-blocking" << std::endl;
 	}
 	
 	// Create libev timer
-	schedule timer(this, worker_obj, conf, db);
+	schedule timer(this, worker_obj, conf, db, sc);
 	
 	schedule_event.set<schedule, &schedule::handle>(&timer);
 	schedule_event.set(conf->schedule_interval, conf->schedule_interval); // After interval, every interval
@@ -74,7 +74,7 @@ connection_mother::connection_mother(worker * worker_obj, config * config_obj, m
 
 void connection_mother::handle_connect(ev::io &watcher, int events_flags) {
 	// Spawn a new middleman
-	if(open_connections < conf->max_middlemen) {
+	if (open_connections < conf->max_middlemen) {
 		opened_connections++;
 		new connection_middleman(listen_socket, address, addr_len, work, this, conf);
 	}
@@ -97,7 +97,7 @@ connection_middleman::connection_middleman(int &listen_socket, sockaddr_in &addr
 	conf(config_obj), mother (mother_arg), work(new_work), gzip(false) {
 	
 	connect_sock = accept(listen_socket, (sockaddr *) &address, &addr_len);
-	if(connect_sock == -1) {
+	if (connect_sock == -1) {
 		std::cout << "Accept failed, errno " << errno << ": " << strerror(errno) << std::endl;
 		mother->increment_open_connections(); // destructor decrements open connections
 		delete this;
@@ -106,15 +106,15 @@ connection_middleman::connection_middleman(int &listen_socket, sockaddr_in &addr
 	
 	// Set non-blocking
 	int flags = fcntl(connect_sock, F_GETFL);
-	if(flags == -1) {
+	if (flags == -1) {
 		std::cout << "Could not get connect socket flags" << std::endl;
 	}
-	if(fcntl(connect_sock, F_SETFL, flags | O_NONBLOCK) == -1) {
+	if (fcntl(connect_sock, F_SETFL, flags | O_NONBLOCK) == -1) {
 		std::cout << "Could not set non-blocking" << std::endl;
 	}
 	
 	// Get their info
-	if(getpeername(connect_sock, (sockaddr *) &client_addr, &addr_len) == -1) {
+	if (getpeername(connect_sock, (sockaddr *) &client_addr, &addr_len) == -1) {
 		//std::cout << "Could not get client info" << std::endl;
 	}
 	
@@ -143,7 +143,7 @@ void connection_middleman::handle_read(ev::io &watcher, int events_flags) {
 	memset(buffer, 0, conf->max_read_buffer + 1);
 	int status = recv(connect_sock, &buffer, conf->max_read_buffer, 0);
 	
-	if(status == -1) {
+	if (status == -1) {
 		delete this;
 		return;
 	}

@@ -17,16 +17,16 @@ AC_DEFUN([EV_DEVEL],
 	dnl Set up configure script macros
 	dnl
 	AC_ARG_WITH(ev,
-		[  --with-ev=<path>     path containing libev header and library subdirs],
+		[AS_HELP_STRING([--with-ev=<path>],[path containing libev header and library subdirs])],
 		[EV_lib_check="$with_ev/lib64 $with_ev/lib $with_ev/lib64/libev $with_ev/lib/libev"
 		  EV_inc_check="$with_ev/include $with_ev/include/libev"],
 		[EV_lib_check="/usr/local/libev/lib64 /usr/local/libev/lib /usr/local/lib64/libev /usr/local/lib/libev /opt/libev/lib64 /opt/libev/lib /usr/lib64/libev /usr/lib/libev /usr/local/lib64 /usr/local/lib /usr/lib64 /usr/lib"
 		  EV_inc_check="/usr/local/libev/include /usr/local/include/libev /opt/libev/include /usr/local/include/libev /usr/local/include /usr/include/libev /usr/include"])
 	AC_ARG_WITH(ev-lib,
-		[  --with-ev-lib=<path> directory path of libev library],
+		[AS_HELP_STRING([--with-ev-lib=<path>],[directory path of libev library])],
 		[EV_lib_check="$with_ev_lib $with_ev_lib/lib64 $with_ev_lib/lib $with_ev_lib/lib64/libev $with_ev_lib/lib/libev"])
 	AC_ARG_WITH(ev-include,
-		[  --with-ev-include=<path> directory path of libev headers],
+		[AS_HELP_STRING([--with-ev-include=<path>],[directory path of libev headers])],
 		[EV_inc_check="$with_ev_include $with_ev_include/include $with_ev_include/include/libev"])
 
 	dnl

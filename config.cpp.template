@@ -21,6 +21,8 @@ config::config() {
 	mysql_username = "***";
 	mysql_password = "***";
 
+	// Site communication
 	site_host = "localhost";
 	site_password = "********************************"; // MUST BE 32 CHARS
+	site_path = ""; // If the site is not running under the domain root
 }

@@ -46,16 +46,16 @@ AC_DEFUN([MYSQLPP_DEVEL],
 	dnl Set up configure script macros
 	dnl
 	AC_ARG_WITH(mysqlpp,
-		[  --with-mysqlpp=<path>     path containing MySQL++ header and library subdirs],
+		[AS_HELP_STRING([--with-mysqlpp=<path>],[path containing MySQL++ header and library subdirs])],
 		[MYSQLPP_lib_check="$with_mysqlpp/lib64 $with_mysqlpp/lib $with_mysqlpp/lib64/mysql++ $with_mysqlpp/lib/mysql++"
 		  MYSQLPP_inc_check="$with_mysqlpp/include $with_mysqlpp/include/mysql++"],
 		[MYSQLPP_lib_check="/usr/local/mysql++/lib64 /usr/local/mysql++/lib /usr/local/lib64/mysql++ /usr/local/lib/mysql++ /opt/mysql++/lib64 /opt/mysql++/lib /usr/lib64/mysql++ /usr/lib/mysql++ /usr/local/lib64 /usr/local/lib /usr/lib64 /usr/lib"
 		  MYSQLPP_inc_check="/usr/local/mysql++/include /usr/local/include/mysql++ /opt/mysql++/include /usr/local/include/mysql++ /usr/local/include /usr/include/mysql++ /usr/include"])
 	AC_ARG_WITH(mysqlpp-lib,
-		[  --with-mysqlpp-lib=<path> directory path of MySQL++ library],
+		[AS_HELP_STRING([--with-mysqlpp-lib=<path>],[directory path of MySQL++ library])],
 		[MYSQLPP_lib_check="$with_mysqlpp_lib $with_mysqlpp_lib/lib64 $with_mysqlpp_lib/lib $with_mysqlpp_lib/lib64/mysql $with_mysqlpp_lib/lib/mysql"])
 	AC_ARG_WITH(mysqlpp-include,
-		[  --with-mysqlpp-include=<path> directory path of MySQL++ headers],
+		[AS_HELP_STRING([--with-mysqlpp-include=<path>],[directory path of MySQL++ headers])],
 		[MYSQLPP_inc_check="$with_mysqlpp_include $with_mysqlpp_include/include $with_mysqlpp_include/include/mysql"])
 
 	dnl

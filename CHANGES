@@ -1,3 +1,15 @@
+-- 0.6 (2013-03-19)
+Add --with-tcmalloc option to the configure script to enable Google's high-performance multi-threaded malloc() implementation
+Configurable site path
+Expire multiple tokens in a single request to the web server
+Less spammy output unless a -v switch is passed when starting Ocelot
+Make flush queries slightly less spammy by moving them to the functions that invoke flush threads
+Make Ocelot clear stale peer data out of the db on startup
+Print warning instead of error if someone submits an IPv6 or otherwise invalid address
+Remove unused logger class
+Send special data to search engine crawlers (and other odd clients) in an attempt to prevent indexing of announce URLs
+Use a lighter query to update peer records in xbt_files_users if a peer's data has not changed since its previous announcement
+
 -- 0.5 (2012-10-08)
 Add ability to show reasons why a torrent was deleted on unregistered torrents
 Add gzip compression support for announces and scrapes

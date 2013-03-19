@@ -10,19 +10,18 @@
 
 typedef struct {
 	int userid;
-	std::string peer_id;
-//	std::string user_agent;
-	std::string ip_port;
-	std::string ip;
 	unsigned int port;
 	int64_t uploaded;
 	int64_t downloaded;
 	int64_t corrupt;
-	uint64_t left;
+	int64_t left;
 	time_t last_announced;
 	time_t first_announced;
 	unsigned int announces;
 	bool visible;
+	bool invalid_ip;
+	std::string ip_port;
+	std::string ip;
 } peer;
 
 typedef std::map<std::string, peer> peer_list;
@@ -35,16 +34,17 @@ typedef struct {
 	int64_t balance;
 	int completed;
 	freetype free_torrent;
-	std::map<std::string, peer> seeders;
-	std::map<std::string, peer> leechers;
+	time_t last_flushed;
+	peer_list seeders;
+	peer_list leechers;
 	std::string last_selected_seeder;
 	std::set<int> tokened_users;
-	time_t last_flushed;
 } torrent;
 
 typedef struct {
 	int id;
 	bool can_leech;
+	bool protect_ip;
 } user;
 
 enum {

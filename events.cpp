@@ -5,8 +5,7 @@
 #include "events.h"
 #include "schedule.h"
 #include <cerrno>
-
-
+#include <mutex>
 
 // Define the connection mother (first half) and connection middlemen (second half)
 
@@ -15,9 +14,6 @@
 //---------- Connection mother - spawns middlemen and lets them deal with the connection
 
 connection_mother::connection_mother(worker * worker_obj, config * config_obj, mysql * db_obj, site_comm * sc_obj) : work(worker_obj), conf(config_obj), db(db_obj), sc(sc_obj) {
-	open_connections = 0;
-	opened_connections = 0;
-	
 	memset(&address, 0, sizeof(address));
 	addr_len = sizeof(address);
 	
@@ -74,8 +70,10 @@ connection_mother::connection_mother(worker * worker_obj, config * config_obj, m
 
 void connection_mother::handle_connect(ev::io &watcher, int events_flags) {
 	// Spawn a new middleman
-	if (open_connections < conf->max_middlemen) {
-		opened_connections++;
+	if (stats.open_connections < conf->max_middlemen) {
+		std::unique_lock<std::mutex> lock(stats.mutex);
+		stats.opened_connections++;
+		lock.unlock();
 		new connection_middleman(listen_socket, address, addr_len, work, this, conf);
 	}
 }
@@ -94,13 +92,14 @@ connection_mother::~connection_mother()
 //---------- Connection middlemen - these little guys live until their connection is closed
 
 connection_middleman::connection_middleman(int &listen_socket, sockaddr_in &address, socklen_t &addr_len, worker * new_work, connection_mother * mother_arg, config * config_obj) : 
-	conf(config_obj), mother (mother_arg), work(new_work), gzip(false) {
+	conf(config_obj), mother (mother_arg), work(new_work) {
 	
 	connect_sock = accept(listen_socket, (sockaddr *) &address, &addr_len);
 	if (connect_sock == -1) {
 		std::cout << "Accept failed, errno " << errno << ": " << strerror(errno) << std::endl;
-		mother->increment_open_connections(); // destructor decrements open connections
 		delete this;
+		std::unique_lock<std::mutex> lock(stats.mutex);
+		stats.open_connections++; // destructor decrements open connections
 		return;
 	}
 	
@@ -127,12 +126,14 @@ connection_middleman::connection_middleman(int &listen_socket, sockaddr_in &addr
 	timeout_event.set(conf->timeout_interval, 0);
 	timeout_event.start();
 	
-	mother->increment_open_connections();
+	std::unique_lock<std::mutex> lock(stats.mutex);
+	stats.open_connections++;
 }
 
 connection_middleman::~connection_middleman() {
 	close(connect_sock);
-	mother->decrement_open_connections();
+	std::unique_lock<std::mutex> lock(stats.mutex);
+	stats.open_connections--;
 }
 
 // Handler to read data from the socket, called by event loop when socket is readable
@@ -141,13 +142,15 @@ void connection_middleman::handle_read(ev::io &watcher, int events_flags) {
 	
 	char buffer[conf->max_read_buffer + 1];
 	memset(buffer, 0, conf->max_read_buffer + 1);
-	int status = recv(connect_sock, &buffer, conf->max_read_buffer, 0);
+	int ret = recv(connect_sock, &buffer, conf->max_read_buffer, 0);
 	
-	if (status == -1) {
+	if (ret == -1) {
 		delete this;
 		return;
 	}
-	
+	std::unique_lock<std::mutex> lock(stats.mutex);
+	stats.bytes_read += ret;
+	lock.unlock();
 	std::string stringbuf = buffer;
 	
 	char ip[INET_ADDRSTRLEN];
@@ -155,7 +158,7 @@ void connection_middleman::handle_read(ev::io &watcher, int events_flags) {
 	std::string ip_str = ip;
 	
 	//--- CALL WORKER
-	response = work->work(stringbuf, ip_str, gzip);
+	response = work->work(stringbuf, ip_str);
 	
 	// Find out when the socket is writeable. 
 	// The loop in connection_mother will call handle_write when it is. 
@@ -167,13 +170,10 @@ void connection_middleman::handle_read(ev::io &watcher, int events_flags) {
 void connection_middleman::handle_write(ev::io &watcher, int events_flags) {
 	write_event.stop();
 	timeout_event.stop();
-	std::string http_response = "HTTP/1.1 200 OK\r\nServer: Ocelot 1.0\r\nContent-Type: text/plain\r\n";
-	if (gzip) {
-		http_response += "Content-Encoding: gzip\r\n";
-	}
-	http_response += "Connection: close\r\n\r\n";
-	http_response += response;
-	send(connect_sock, http_response.c_str(), http_response.size(), MSG_NOSIGNAL);
+	send(connect_sock, response.c_str(), response.size(), MSG_NOSIGNAL);
+	std::unique_lock<std::mutex> lock(stats.mutex);
+	stats.bytes_written += response.size();
+	lock.unlock();
 	delete this;
 }
 

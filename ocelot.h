@@ -3,13 +3,16 @@
 #include <vector>
 #include <unordered_map>
 #include <set>
-#include <boost/thread/thread.hpp>
+#include <memory>
+#include <mutex>
 
 #ifndef OCELOT_H
 #define OCELOT_H
 
+class user;
+typedef std::shared_ptr<user> user_ptr;
+
 typedef struct {
-	int userid;
 	unsigned int port;
 	int64_t uploaded;
 	int64_t downloaded;
@@ -20,6 +23,7 @@ typedef struct {
 	unsigned int announces;
 	bool visible;
 	bool invalid_ip;
+	user_ptr user;
 	std::string ip_port;
 	std::string ip;
 } peer;
@@ -30,7 +34,6 @@ enum freetype { NORMAL, FREE, NEUTRAL };
 
 typedef struct {
 	int id;
-	time_t last_seeded;
 	int64_t balance;
 	int completed;
 	freetype free_torrent;
@@ -40,12 +43,6 @@ typedef struct {
 	std::string last_selected_seeder;
 	std::set<int> tokened_users;
 } torrent;
-
-typedef struct {
-	int id;
-	bool can_leech;
-	bool protect_ip;
-} user;
 
 enum {
 	DUPE, // 0
@@ -78,8 +75,23 @@ typedef struct {
 	time_t time;
 } del_message;
 
-
 typedef std::unordered_map<std::string, torrent> torrent_list;
-typedef std::unordered_map<std::string, user> user_list;
+typedef std::unordered_map<std::string, user_ptr> user_list;
+typedef std::unordered_map<std::string, std::string> params_type;
 
+struct stats {
+	std::mutex mutex;
+	unsigned int open_connections;
+	uint64_t opened_connections;
+	uint64_t connection_rate;
+	unsigned int leechers;
+	unsigned int seeders;
+	uint64_t announcements;
+	uint64_t succ_announcements;
+	uint64_t scrapes;
+	uint64_t bytes_read;
+	uint64_t bytes_written;
+	time_t start_time;
+};
+extern struct stats stats;
 #endif

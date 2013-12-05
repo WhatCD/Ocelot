@@ -4,10 +4,9 @@
 #include <string>
 #include <sstream>
 #include <queue>
+#include <mutex>
 #include <boost/asio.hpp>
-#include <boost/thread/thread.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/locks.hpp>
+#include <thread>
 
 #include "config.h"
 #include "site_comm.h"
@@ -34,7 +33,7 @@ void site_comm::expire_token(int torrent, int user)
 	expire_token_buffer += token_pair.str();
 	if (expire_token_buffer.length() > 350) {
 		std::cout << "Flushing overloaded token buffer" << std::endl;
-		boost::mutex::scoped_lock lock(expire_queue_lock);
+		std::unique_lock<std::mutex> lock(expire_queue_lock);
 		token_queue.push(expire_token_buffer);
 		expire_token_buffer.clear();
 	}
@@ -42,7 +41,7 @@ void site_comm::expire_token(int torrent, int user)
 
 void site_comm::flush_tokens()
 {
-	boost::mutex::scoped_lock lock(expire_queue_lock);
+	std::unique_lock<std::mutex> lock(expire_queue_lock);
 	size_t qsize = token_queue.size();
 	if (verbose_flush || qsize > 0) {
 		std::cout << "Token expire queue size: " << qsize << std::endl;
@@ -53,7 +52,8 @@ void site_comm::flush_tokens()
 	token_queue.push(expire_token_buffer);
 	expire_token_buffer.clear();
 	if (t_active == false) {
-		boost::thread thread(&site_comm::do_flush_tokens, this);
+		std::thread thread(&site_comm::do_flush_tokens, this);
+		thread.detach();
 	}
 }
 
@@ -106,7 +106,7 @@ void site_comm::do_flush_tokens()
 			}
 
 			if (status_code == 200) {
-				boost::mutex::scoped_lock lock(expire_queue_lock);
+				std::unique_lock<std::mutex> lock(expire_queue_lock);
 				token_queue.pop();
 			} else {
 				std::cout << "Response returned with status code " << status_code << " when trying to expire a token!" << std::endl;;

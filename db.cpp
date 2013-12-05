@@ -1,14 +1,14 @@
 #include "ocelot.h"
 #include "db.h"
+#include "user.h"
 #include "misc_functions.h"
 #include <string>
 #include <iostream>
 #include <queue>
 #include <unistd.h>
 #include <time.h>
-#include <boost/thread/thread.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/locks.hpp>
+#include <mutex>
+#include <thread>
 #include <boost/lexical_cast.hpp>
 
 #define DB_LOCK_TIMEOUT 50
@@ -52,7 +52,7 @@ void mysql::clear_peer_data() {
 	}
 }
 
-void mysql::load_torrents(std::unordered_map<std::string, torrent> &torrents) {
+void mysql::load_torrents(torrent_list &torrents) {
 	mysqlpp::Query query = conn.query("SELECT ID, info_hash, freetorrent, Snatched FROM torrents ORDER BY ID;");
 	if (mysqlpp::StoreQueryResult res = query.store()) {
 		mysqlpp::String one("1"); // Hack to get around bug in mysql++3.0.0
@@ -79,31 +79,29 @@ void mysql::load_torrents(std::unordered_map<std::string, torrent> &torrents) {
 	}
 }
 
-void mysql::load_users(std::unordered_map<std::string, user> &users) {
+void mysql::load_users(user_list &users) {
 	mysqlpp::Query query = conn.query("SELECT ID, can_leech, torrent_pass, visible FROM users_main WHERE Enabled='1';");
 	if (mysqlpp::StoreQueryResult res = query.store()) {
 		size_t num_rows = res.num_rows();
 		for (size_t i = 0; i < num_rows; i++) {
 			std::string passkey;
 			res[i][2].to_string(passkey);
+			bool protect_ip = res[i][3].compare("1") != 0;
 
-			user u;
-			u.id = res[i][0];
-			u.can_leech = res[i][1];
-			u.protect_ip = res[i][3].compare("1") != 0;
-			users[passkey] = u;
+			user_ptr u(new user(res[i][0], res[i][1], protect_ip));
+			users.insert(std::pair<std::string, user_ptr>(passkey, u));
 		}
 	}
 }
 
-void mysql::load_tokens(std::unordered_map<std::string, torrent> &torrents) {
+void mysql::load_tokens(torrent_list &torrents) {
 	mysqlpp::Query query = conn.query("SELECT uf.UserID, t.info_hash FROM users_freeleeches AS uf JOIN torrents AS t ON t.ID = uf.TorrentID WHERE uf.Expired = '0';");
 	if (mysqlpp::StoreQueryResult res = query.store()) {
 		size_t num_rows = res.num_rows();
 		for (size_t i = 0; i < num_rows; i++) {
 			std::string info_hash;
 			res[i][1].to_string(info_hash);
-			std::unordered_map<std::string, torrent>::iterator it = torrents.find(info_hash);
+			torrent_list::iterator it = torrents.find(info_hash);
 			if (it != torrents.end()) {
 				torrent &tor = it->second;
 				tor.tokened_users.insert(res[i][0]);
@@ -138,6 +136,7 @@ void mysql::record_user(std::string &record) {
 }
 
 void mysql::record_torrent(std::string &record) {
+	std::unique_lock<std::mutex> tb_lock(torrent_buffer_lock);
 	if (update_torrent_buffer != "") {
 		update_torrent_buffer += ",";
 	}
@@ -163,11 +162,13 @@ void mysql::record_peer(std::string &record, std::string &peer_id) {
 	update_light_peer_buffer += q.str();
 }
 
-void mysql::record_snatch(std::string &record) {
+void mysql::record_snatch(std::string &record, std::string &ip) {
 	if (update_snatch_buffer != "") {
 		update_snatch_buffer += ",";
 	}
-	update_snatch_buffer += record;
+	mysqlpp::Query q = conn.query();
+	q << record << ',' << mysqlpp::quote << ip << ')';
+	update_snatch_buffer += q.str();
 }
 
 bool mysql::all_clear() {
@@ -184,7 +185,7 @@ void mysql::flush() {
 
 void mysql::flush_users() {
 	std::string sql;
-	boost::mutex::scoped_lock lock(user_queue_lock);
+	std::unique_lock<std::mutex> uq_lock(user_queue_lock);
 	size_t qsize = user_queue.size();
 	if (verbose_flush || qsize > 0) {
 		std::cout << "User flush queue size: " << qsize << std::endl;
@@ -197,13 +198,15 @@ void mysql::flush_users() {
 	user_queue.push(sql);
 	update_user_buffer.clear();
 	if (u_active == false) {
-		boost::thread thread(&mysql::do_flush_users, this);
+		std::thread thread(&mysql::do_flush_users, this);
+		thread.detach();
 	}
 }
 
 void mysql::flush_torrents() {
 	std::string sql;
-	boost::mutex::scoped_lock lock(torrent_queue_lock);
+	std::unique_lock<std::mutex> tq_lock(torrent_queue_lock);
+	std::unique_lock<std::mutex> tb_lock(torrent_buffer_lock);
 	size_t qsize = torrent_queue.size();
 	if (verbose_flush || qsize > 0) {
 		std::cout << "Torrent flush queue size: " << qsize << std::endl;
@@ -221,13 +224,14 @@ void mysql::flush_torrents() {
 	sql = "DELETE FROM torrents WHERE info_hash = ''";
 	torrent_queue.push(sql);
 	if (t_active == false) {
-		boost::thread thread(&mysql::do_flush_torrents, this);
+		std::thread thread(&mysql::do_flush_torrents, this);
+		thread.detach();
 	}
 }
 
 void mysql::flush_snatches() {
 	std::string sql;
-	boost::mutex::scoped_lock lock(snatch_queue_lock);
+	std::unique_lock<std::mutex> sq_lock(snatch_queue_lock);
 	size_t qsize = snatch_queue.size();
 	if (verbose_flush || qsize > 0) {
 		std::cout << "Snatch flush queue size: " << qsize << std::endl;
@@ -239,21 +243,17 @@ void mysql::flush_snatches() {
 	snatch_queue.push(sql);
 	update_snatch_buffer.clear();
 	if (s_active == false) {
-		boost::thread thread(&mysql::do_flush_snatches, this);
+		std::thread thread(&mysql::do_flush_snatches, this);
+		thread.detach();
 	}
 }
 
 void mysql::flush_peers() {
 	std::string sql;
-	boost::mutex::scoped_lock lock(peer_queue_lock);
+	std::unique_lock<std::mutex> pq_lock(peer_queue_lock);
 	size_t qsize = peer_queue.size();
 	if (verbose_flush || qsize > 0) {
 		std::cout << "Peer flush queue size: " << qsize << std::endl;
-	}
-	// because xfu inserts are slow and ram is not infinite we need to
-	// limit this queue's size
-	if (qsize >= 1000) {
-		peer_queue.pop();
 	}
 
 	// Nothing to do
@@ -268,6 +268,13 @@ void mysql::flush_peers() {
 	}
 
 	if (update_heavy_peer_buffer != "") {
+		// Because xfu inserts are slow and ram is not infinite we need to
+		// limit this queue's size
+		// xfu will be messed up if the light query inserts a new row,
+		// but that's better than an oom crash
+		if (qsize >= 1000) {
+			peer_queue.pop();
+		}
 		sql = "INSERT INTO xbt_files_users (uid,fid,active,uploaded,downloaded,upspeed,downspeed,remaining,corrupt," +
 			std::string("timespent,announced,ip,peer_id,useragent,mtime) VALUES ") + update_heavy_peer_buffer +
 					" ON DUPLICATE KEY UPDATE active=VALUES(active), uploaded=VALUES(uploaded), " +
@@ -280,6 +287,10 @@ void mysql::flush_peers() {
 		sql.clear();
 	}
 	if (update_light_peer_buffer != "") {
+		// See comment above
+		if (qsize >= 1000) {
+			peer_queue.pop();
+		}
 		sql = "INSERT INTO xbt_files_users (fid,timespent,announced,peer_id,mtime) VALUES " +
 					update_light_peer_buffer +
 					" ON DUPLICATE KEY UPDATE upspeed=0, downspeed=0, timespent=VALUES(timespent), " +
@@ -290,13 +301,14 @@ void mysql::flush_peers() {
 	}
 
 	if (p_active == false) {
-		boost::thread thread(&mysql::do_flush_peers, this);
+		std::thread thread(&mysql::do_flush_peers, this);
+		thread.detach();
 	}
 }
 
 void mysql::flush_tokens() {
 	std::string sql;
-	boost::mutex::scoped_lock lock(token_queue_lock);
+	std::unique_lock<std::mutex> tq_lock(token_queue_lock);
 	size_t qsize = token_queue.size();
 	if (verbose_flush || qsize > 0) {
 		std::cout << "Token flush queue size: " << qsize << std::endl;
@@ -309,7 +321,8 @@ void mysql::flush_tokens() {
 	token_queue.push(sql);
 	update_token_buffer.clear();
 	if (tok_active == false) {
-		boost::thread(&mysql::do_flush_tokens, this);
+		std::thread thread(&mysql::do_flush_tokens, this);
+		thread.detach();
 	}
 }
 
@@ -326,7 +339,7 @@ void mysql::do_flush_users() {
 					sleep(3);
 					continue;
 				} else {
-					boost::mutex::scoped_lock lock(user_queue_lock);
+					std::unique_lock<std::mutex> uq_lock(user_queue_lock);
 					user_queue.pop();
 				}
 			}
@@ -366,7 +379,7 @@ void mysql::do_flush_torrents() {
 					sleep(3);
 					continue;
 				} else {
-					boost::mutex::scoped_lock lock(torrent_queue_lock);
+					std::unique_lock<std::mutex> tq_lock(torrent_queue_lock);
 					torrent_queue.pop();
 				}
 			}
@@ -402,7 +415,7 @@ void mysql::do_flush_peers() {
 					sleep(3);
 					continue;
 				} else {
-					boost::mutex::scoped_lock lock(peer_queue_lock);
+					std::unique_lock<std::mutex> pq_lock(peer_queue_lock);
 					peer_queue.pop();
 				}
 			}
@@ -438,7 +451,7 @@ void mysql::do_flush_snatches() {
 					sleep(3);
 					continue;
 				} else {
-					boost::mutex::scoped_lock lock(snatch_queue_lock);
+					std::unique_lock<std::mutex> sq_lock(snatch_queue_lock);
 					snatch_queue.pop();
 				}
 			} 
@@ -474,7 +487,7 @@ void mysql::do_flush_tokens() {
 					sleep(3);
 					continue;
 				} else {
-					boost::mutex::scoped_lock lock(token_queue_lock);
+					std::unique_lock<std::mutex> tq_lock(token_queue_lock);
 					token_queue.pop();
 				}
 			}

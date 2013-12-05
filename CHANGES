@@ -1,3 +1,16 @@
+-- 0.7 (2013-12-05)
+Add bintohex function to use when printing binary data to stdout
+Check if compiler supports -std=c++11
+Collect some stats and add a method that prints them
+Create a function for adding peers
+Fix a potential problem where a deleted pointer was being accessed
+Improve the anti-web crawler code
+Make use of the peer iterator for faster deletions
+Remove most of the dependencies on boost and move all thread-related calls to the STL components provided in C++11
+Run the reaper routines in a single thread to clean up stdout
+Separate the sections responsible for output to make it easier to change http headers if needed
+Update the db's torrents table when the peer reaper deletes the last peer on a torrent
+
 -- 0.6 (2013-03-19)
 Add --with-tcmalloc option to the configure script to enable Google's high-performance multi-threaded malloc() implementation
 Configurable site path

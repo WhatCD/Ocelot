@@ -56,18 +56,8 @@ class connection_mother {
 		site_comm * sc;
 		ev::timer schedule_event;
 		
-		unsigned int open_connections;
-		uint64_t opened_connections;
-		
 	public: 
 		connection_mother(worker * worker_obj, config * config_obj, mysql * db_obj, site_comm * sc_obj);
-		
-		void increment_open_connections() { open_connections++; }
-		void decrement_open_connections() { open_connections--; }
-		
-		unsigned int get_open_connections() { return open_connections; }
-		uint64_t get_opened_connections() { return opened_connections; }
-
 		void handle_connect(ev::io &watcher, int events_flags);
 		~connection_mother();
 };
@@ -87,7 +77,6 @@ class connection_middleman {
 		connection_mother * mother;
 		worker * work;
 		sockaddr_in client_addr;
-		bool gzip;
 	
 	public:
 		connection_middleman(int &listen_socket, sockaddr_in &address, socklen_t &addr_len, worker* work, connection_mother * mother_arg, config * config_obj);
@@ -97,7 +86,3 @@ class connection_middleman {
 		void handle_write(ev::io &watcher, int events_flags);
 		void handle_timeout(ev::timer &watcher, int events_flags);
 };
-
-
-
-

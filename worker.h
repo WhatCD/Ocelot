@@ -6,7 +6,7 @@
 #include <arpa/inet.h>
 #include <iostream>
 #include <fstream>
-#include <boost/thread/mutex.hpp>
+#include <mutex>
 #include "site_comm.h"
 #include "ocelot.h"
 
@@ -20,27 +20,29 @@ class worker {
 		std::unordered_map<std::string, del_message> del_reasons;
 		config * conf;
 		mysql * db;
-		void do_reap_peers();
-		void do_reap_del_reasons();
 		tracker_status status;
 		time_t cur_time;
 		site_comm * s_comm;
+
+		std::mutex del_reasons_lock;
+		std::mutex ustats_lock;
+		void do_start_reaper();
+		void reap_peers();
+		void reap_del_reasons();
 		std::string get_del_reason(int code);
-		boost::mutex del_reasons_lock;
-		bool peer_is_visible(user *u, peer *p);
+		peer_list::iterator add_peer(peer_list &peer_list, std::string &peer_id);
+		bool peer_is_visible(user_ptr &u, peer *p);
 
 	public:
 		worker(torrent_list &torrents, user_list &users, std::vector<std::string> &_whitelist, config * conf_obj, mysql * db_obj, site_comm * sc);
-		std::string work(std::string &input, std::string &ip, bool &gzip);
-		std::string error(std::string err);
-		std::string warning(std::string err);
-		std::string announce(torrent &tor, user &u, std::map<std::string, std::string> &params, std::map<std::string, std::string> &headers, std::string &ip, bool &gzip);
-		std::string scrape(const std::list<std::string> &infohashes, std::map<std::string, std::string> &headers, bool &gzip);
-		std::string update(std::map<std::string, std::string> &params);
+		std::string work(std::string &input, std::string &ip);
+		std::string announce(torrent &tor, user_ptr &u, params_type &params, params_type &headers, std::string &ip);
+		std::string scrape(const std::list<std::string> &infohashes, params_type &headers);
+		std::string update(params_type &params);
 
 		bool signal(int sig);
 
 		tracker_status get_status() { return status; }
 
-		void reap_peers();
+		void start_reaper();
 };

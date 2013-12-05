@@ -56,3 +56,26 @@ std::string hex_decode(const std::string &in) {
 	}
 	return out;
 }
+
+std::string bintohex(const std::string &in) {
+	std::string out;
+	out.reserve(40);
+	size_t length = in.length();
+	for (unsigned int i = 0; i < length; i++) {
+		unsigned char x = (unsigned char)in[i] >> 4;
+		if (x > 9) {
+			x += 'a' - 10;
+		} else {
+			x += '0';
+		}
+		out.push_back(x);
+		x = in[i] & 0xF;
+		if (x > 9) {
+			x += 'a' - 10;
+		} else {
+			x += '0';
+		}
+		out.push_back(x);
+	}
+	return out;
+}

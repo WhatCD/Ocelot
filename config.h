@@ -30,6 +30,8 @@ class config {
 		std::string site_password;
 		std::string site_path;
 
+		std::string report_password;
+
 		config();
 };
 

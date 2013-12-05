@@ -91,7 +91,7 @@ AC_DEFUN([EV_DEVEL],
 	  /usr/lib) ;;
 	  *) LDFLAGS="$LDFLAGS -L${ac_cv_ev_lib}" ;;
 	esac
-	CPPFLAGS="$CPPFLAGS -I${ac_cv_ev_inc} -I${MYSQL_C_INC_DIR}"
+	CPPFLAGS="$CPPFLAGS -I${ac_cv_ev_inc}"
 	AC_MSG_CHECKING([that we can build libev programs])
 	AC_COMPILE_IFELSE(
 		[AC_LANG_PROGRAM([#include <ev++.h>],

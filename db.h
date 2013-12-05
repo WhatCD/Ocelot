@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 #include <queue>
-#include <boost/thread/mutex.hpp>
+#include <mutex>
 
 class mysql {
 	private:
@@ -28,11 +28,12 @@ class mysql {
 
 		// These locks prevent more than one thread from reading/writing the buffers.
 		// These should be held for the minimum time possible.
-		boost::mutex user_queue_lock;
-		boost::mutex torrent_queue_lock;
-		boost::mutex peer_queue_lock;
-		boost::mutex snatch_queue_lock;
-		boost::mutex token_queue_lock;
+		std::mutex user_queue_lock;
+		std::mutex torrent_buffer_lock;
+		std::mutex torrent_queue_lock;
+		std::mutex peer_queue_lock;
+		std::mutex snatch_queue_lock;
+		std::mutex token_queue_lock;
 
 		void do_flush_users();
 		void do_flush_torrents();
@@ -51,14 +52,14 @@ class mysql {
 		bool verbose_flush;
 
 		mysql(std::string mysql_db, std::string mysql_host, std::string username, std::string password);
-		void load_torrents(std::unordered_map<std::string, torrent> &torrents);
-		void load_users(std::unordered_map<std::string, user> &users);
-		void load_tokens(std::unordered_map<std::string, torrent> &torrents);
+		void load_torrents(torrent_list &torrents);
+		void load_users(user_list &users);
+		void load_tokens(torrent_list &torrents);
 		void load_whitelist(std::vector<std::string> &whitelist);
 		
 		void record_user(std::string &record); // (id,uploaded_change,downloaded_change)
 		void record_torrent(std::string &record); // (id,seeders,leechers,snatched_change,balance)
-		void record_snatch(std::string &record); // (uid,fid,tstamp)
+		void record_snatch(std::string &record, std::string &ip); // (uid,fid,tstamp)
 		void record_peer(std::string &record, std::string &ip, std::string &peer_id, std::string &useragent); // (uid,fid,active,peerid,useragent,ip,uploaded,downloaded,upspeed,downspeed,left,timespent,announces,tstamp)
 		void record_peer(std::string &record, std::string &peer_id); // (fid,peerid,timespent,announces,tstamp)
 		void record_token(std::string &record);
@@ -67,7 +68,7 @@ class mysql {
 
 		bool all_clear();
 		
-		boost::mutex torrent_list_mutex;
+		std::mutex torrent_list_mutex;
 };
 
 #pragma GCC visibility pop

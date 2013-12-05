@@ -6,7 +6,7 @@
 #include <string>
 #include <boost/asio.hpp>
 #include <queue>
-#include <boost/thread/mutex.hpp>
+#include <mutex>
 
 #include "config.h"
 
@@ -15,7 +15,7 @@ using boost::asio::ip::tcp;
 class site_comm {
 	private:
 		config conf;
-		boost::mutex expire_queue_lock;
+		std::mutex expire_queue_lock;
 		std::string expire_token_buffer;
 		std::queue<std::string> token_queue;
 		bool t_active;

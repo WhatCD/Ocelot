@@ -40,7 +40,7 @@ std::string hex_decode(const std::string &in) {
 			} else if (in[i] >= '0' && in[i] <= '9') {
 				x = static_cast<unsigned char>((in[i]-48) << 4);
 			}
-			
+
 			i++;
 			if (in[i] >= 'a' && in[i] <= 'f') {
 				x += static_cast<unsigned char>(in[i]-87);

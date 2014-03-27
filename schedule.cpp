@@ -9,7 +9,7 @@
 schedule::schedule(connection_mother * mother_obj, worker* worker_obj, config* conf_obj, mysql * db_obj, site_comm * sc_obj) : mother(mother_obj), work(worker_obj), conf(conf_obj), db(db_obj), sc(sc_obj) {
 	counter = 0;
 	last_opened_connections = 0;
-	
+
 	next_reap_peers = time(NULL) + conf->reap_peers_interval + 40;
 }
 //---------- Schedule - gets called every schedule_interval seconds
@@ -27,7 +27,7 @@ void schedule::handle(ev::timer &watcher, int events_flags) {
 	}
 
 	last_opened_connections = stats.opened_connections;
-	
+
 	db->flush();
 	sc->flush_tokens();
 

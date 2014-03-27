@@ -9,16 +9,17 @@ class config {
 		unsigned int port;
 		unsigned int max_connections;
 		unsigned int max_read_buffer;
+		unsigned int max_request_size;
 		unsigned int timeout_interval;
 		unsigned int schedule_interval;
 		unsigned int max_middlemen;
-		
+
 		unsigned int announce_interval;
 		unsigned int peers_timeout;
-		
+
 		unsigned int reap_peers_interval;
 		unsigned int del_reason_lifetime;
-		
+
 		// MySQL
 		std::string mysql_db;
 		std::string mysql_host;

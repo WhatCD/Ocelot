@@ -16,7 +16,7 @@ class mysql {
 		std::string update_light_peer_buffer;
 		std::string update_snatch_buffer;
 		std::string update_token_buffer;
-		
+
 		std::queue<std::string> user_queue;
 		std::queue<std::string> torrent_queue;
 		std::queue<std::string> peer_queue;
@@ -52,11 +52,12 @@ class mysql {
 		bool verbose_flush;
 
 		mysql(std::string mysql_db, std::string mysql_host, std::string username, std::string password);
+		bool connected();
 		void load_torrents(torrent_list &torrents);
 		void load_users(user_list &users);
 		void load_tokens(torrent_list &torrents);
 		void load_whitelist(std::vector<std::string> &whitelist);
-		
+
 		void record_user(std::string &record); // (id,uploaded_change,downloaded_change)
 		void record_torrent(std::string &record); // (id,seeders,leechers,snatched_change,balance)
 		void record_snatch(std::string &record, std::string &ip); // (uid,fid,tstamp)
@@ -67,7 +68,7 @@ class mysql {
 		void flush();
 
 		bool all_clear();
-		
+
 		std::mutex torrent_list_mutex;
 };
 

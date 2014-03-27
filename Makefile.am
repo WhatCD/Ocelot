@@ -12,4 +12,4 @@ ocelot_LDADD = $(BOOST_IOSTREAMS_LIB) $(BOOST_SYSTEM_LIB) -lev -lmysqlpp
 EXTRA_DIST = CHANGES LICENSE config.cpp.template
 dist-hook:
 	touch ${distdir}/configure
-	patch -p2 -d ${distdir} < ../dist.patch
+	patch -p2 -d ${distdir} --no-backup-if-mismatch < ../dist.patch

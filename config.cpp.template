@@ -5,6 +5,7 @@ config::config() {
 	port = 34000;
 	max_connections = 512;
 	max_read_buffer = 4096;
+	max_request_size = 4096;
 	timeout_interval = 20;
 	schedule_interval = 3;
 	max_middlemen = 5000;

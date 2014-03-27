@@ -47,11 +47,11 @@ typedef struct {
 enum {
 	DUPE, // 0
 	TRUMP, // 1
-	BAD_FILE_NAMES, // 2 
+	BAD_FILE_NAMES, // 2
 	BAD_FOLDER_NAMES, // 3
 	BAD_TAGS, // 4
 	BAD_FORMAT, // 5
-	DISCS_MISSING, // 6 
+	DISCS_MISSING, // 6
 	DISCOGRAPHY,// 7
 	EDITED_LOG,// 8
 	INACCURATE_BITRATE, // 9

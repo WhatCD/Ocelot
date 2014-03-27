@@ -11,7 +11,7 @@ class schedule {
 		site_comm * sc;
 		uint64_t last_opened_connections;
 		int counter;
-		
+
 		time_t next_flush;
 		time_t next_reap_peers;
 	public:

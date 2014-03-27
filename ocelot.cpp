@@ -33,7 +33,12 @@ int main(int argc, char **argv) {
 			verbose = true;
 		}
 	}
+
 	mysql db(conf.mysql_db, conf.mysql_host, conf.mysql_username, conf.mysql_password);
+	if (!db.connected()) {
+		std::cout << "Exiting" << std::endl;
+		return 0;
+	}
 	db.verbose_flush = verbose;
 
 	site_comm sc(conf);

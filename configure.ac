@@ -1,4 +1,4 @@
-AC_INIT(ocelot, 0.7)
+AC_INIT(ocelot, 0.8)
 AM_INIT_AUTOMAKE([1.11 no-define foreign])
 AC_PROG_CXX
 AC_CONFIG_FILES([Makefile])

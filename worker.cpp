@@ -25,8 +25,6 @@
 #include "report.h"
 #include "user.h"
 
-#include <boost/bind.hpp>
-
 //---------- Worker - does stuff with input
 worker::worker(torrent_list &torrents, user_list &users, std::vector<std::string> &_whitelist, config * conf_obj, mysql * db_obj, site_comm * sc) : torrents_list(torrents), users_list(users), whitelist(_whitelist), conf(conf_obj), db(db_obj), s_comm(sc)
 {
@@ -297,6 +295,10 @@ std::string worker::announce(torrent &tor, user_ptr &u, params_type &params, par
 			} else {
 				completed_torrent = false;
 			}
+		} else if (tor.seeders.find(peer_id) != tor.seeders.end()) {
+			// If the peer exists in both peer lists, just decrement the seed count.
+			// Should be cheaper than searching the seed list in the left > 0 case
+			dec_s = true;
 		}
 	} else {
 		peer_it = tor.seeders.find(peer_id);
@@ -310,9 +312,6 @@ std::string worker::announce(torrent &tor, user_ptr &u, params_type &params, par
 				std::pair<peer_list::iterator, bool> insert
 				= tor.seeders.insert(std::pair<std::string, peer>(peer_id, *p));
 				tor.leechers.erase(peer_it);
-				/*if (downloaded > 0) {
-					std::cout << "Found unreported snatch from user " << userid << " on torrent " << tor.id << std::endl;
-				}*/
 				peer_it = insert.first;
 				peer_changed = true;
 				dec_l = true;
@@ -402,10 +401,17 @@ std::string worker::announce(torrent &tor, user_ptr &u, params_type &params, par
 	params_type::const_iterator param_ip = params.find("ip");
 	if (param_ip != params.end()) {
 		ip = param_ip->second;
+	} else if ((param_ip = params.find("ipv4")) != params.end()) {
+		ip = param_ip->second;
 	} else {
-		param_ip = params.find("ipv4");
-		if (param_ip != params.end()) {
-			ip = param_ip->second;
+		auto head_itr = headers.find("x-forwarded-for");
+		if (head_itr != headers.end()) {
+			size_t ip_end_pos = head_itr->second.find(',');
+			if (ip_end_pos != std::string::npos) {
+				ip = head_itr->second.substr(0, ip_end_pos);
+			} else {
+				ip = head_itr->second;
+			}
 		}
 	}
 
@@ -538,8 +544,8 @@ std::string worker::announce(torrent &tor, user_ptr &u, params_type &params, par
 				} else {
 					end = i;
 					if (--end == tor.seeders.begin()) {
-						end++;
-						i++;
+						++end;
+						++i;
 					}
 				}
 
@@ -550,18 +556,18 @@ std::string worker::announce(torrent &tor, user_ptr &u, params_type &params, par
 					}
 					// Don't show users themselves
 					if (i->second.user->get_id() == userid || !i->second.visible) {
-						i++;
+						++i;
 						continue;
 					}
 					peers.append(i->second.ip_port);
 					found_peers++;
 					tor.last_selected_seeder = i->first;
-					i++;
+					++i;
 				}
 			}
 
 			if (found_peers < numwant && tor.leechers.size() > 1) {
-				for (peer_list::const_iterator i = tor.leechers.begin(); i != tor.leechers.end() && found_peers < numwant; i++) {
+				for (peer_list::const_iterator i = tor.leechers.begin(); i != tor.leechers.end() && found_peers < numwant; ++i) {
 					// Don't show users themselves or leech disabled users
 					if (i->second.ip_port == p->ip_port || i->second.user->get_id() == userid || !i->second.visible) {
 						continue;
@@ -572,7 +578,7 @@ std::string worker::announce(torrent &tor, user_ptr &u, params_type &params, par
 
 			}
 		} else if (tor.leechers.size() > 0) { // User is a seeder, and we have leechers!
-			for (peer_list::const_iterator i = tor.leechers.begin(); i != tor.leechers.end() && found_peers < numwant; i++) {
+			for (peer_list::const_iterator i = tor.leechers.begin(); i != tor.leechers.end() && found_peers < numwant; ++i) {
 				// Don't show users themselves or leech disabled users
 				if (i->second.user->get_id() == userid || !i->second.visible) {
 					continue;
@@ -582,7 +588,7 @@ std::string worker::announce(torrent &tor, user_ptr &u, params_type &params, par
 			}
 		}
 	}
-	
+
 	// Update the stats
 	std::unique_lock<std::mutex> lock(stats.mutex);
 	stats.succ_announcements++;
@@ -634,7 +640,7 @@ std::string worker::announce(torrent &tor, user_ptr &u, params_type &params, par
 	// Putting this after the peer deletion gives us accurate swarm sizes
 	if (update_torrent || tor.last_flushed + 3600 < cur_time) {
 		tor.last_flushed = cur_time;
-		
+
 		std::stringstream record;
 		record << '(' << tor.id << ',' << tor.seeders.size() << ',' << tor.leechers.size() << ',' << snatched << ',' << tor.balance << ')';
 		std::string record_str = record.str();
@@ -682,7 +688,7 @@ std::string worker::announce(torrent &tor, user_ptr &u, params_type &params, par
 std::string worker::scrape(const std::list<std::string> &infohashes, params_type &headers) {
 	bool gzip = false;
 	std::string output = "d5:filesd";
-	for (std::list<std::string>::const_iterator i = infohashes.begin(); i != infohashes.end(); i++) {
+	for (std::list<std::string>::const_iterator i = infohashes.begin(); i != infohashes.end(); ++i) {
 		std::string infohash = *i;
 		infohash = hex_decode(infohash);
 
@@ -819,10 +825,10 @@ std::string worker::update(params_type &params) {
 			stats.seeders -= torrent_it->second.seeders.size();
 			stats_lock.unlock();
 			std::unique_lock<std::mutex> us_lock(ustats_lock);
-			for (auto p = torrent_it->second.leechers.begin(); p != torrent_it->second.leechers.end(); p++) {
+			for (auto p = torrent_it->second.leechers.begin(); p != torrent_it->second.leechers.end(); ++p) {
 				p->second.user->decr_leeching();
 			}
-			for (auto p = torrent_it->second.seeders.begin(); p != torrent_it->second.seeders.end(); p++) {
+			for (auto p = torrent_it->second.seeders.begin(); p != torrent_it->second.seeders.end(); ++p) {
 				p->second.user->decr_seeding();
 			}
 			us_lock.unlock();
@@ -948,14 +954,13 @@ void worker::reap_peers() {
 	cur_time = time(NULL);
 	unsigned int reaped_l = 0, reaped_s = 0;
 	unsigned int cleared_torrents = 0;
-	for (auto t = torrents_list.begin(); t != torrents_list.end(); t++) {
+	for (auto t = torrents_list.begin(); t != torrents_list.end(); ++t) {
 		bool reaped_this = false; // True if at least one peer was deleted from the current torrent
 		auto p = t->second.leechers.begin();
 		peer_list::iterator del_p;
 		while (p != t->second.leechers.end()) {
 			if (p->second.last_announced + conf->peers_timeout < cur_time) {
-				del_p = p;
-				p++;
+				del_p = p++;
 				std::unique_lock<std::mutex> us_lock(ustats_lock);
 				del_p->second.user->decr_leeching();
 				us_lock.unlock();
@@ -964,14 +969,13 @@ void worker::reap_peers() {
 				reaped_this = true;
 				reaped_l++;
 			} else {
-				p++;
+				++p;
 			}
 		}
 		p = t->second.seeders.begin();
 		while (p != t->second.seeders.end()) {
 			if (p->second.last_announced + conf->peers_timeout < cur_time) {
-				del_p = p;
-				p++;
+				del_p = p++;
 				std::unique_lock<std::mutex> us_lock(ustats_lock);
 				del_p->second.user->decr_seeding();
 				us_lock.unlock();
@@ -980,7 +984,7 @@ void worker::reap_peers() {
 				reaped_this = true;
 				reaped_s++;
 			} else {
-				p++;
+				++p;
 			}
 		}
 		if (reaped_this && t->second.seeders.empty() && t->second.leechers.empty()) {
@@ -1007,14 +1011,13 @@ void worker::reap_del_reasons()
 	unsigned int reaped = 0;
 	for (; it != del_reasons.end(); ) {
 		if (it->second.time <= max_time) {
-			auto del_it = it;
-			it++;
+			auto del_it = it++;
 			std::unique_lock<std::mutex> dr_lock(del_reasons_lock);
 			del_reasons.erase(del_it);
 			reaped++;
 			continue;
 		}
-		it++;
+		++it;
 	}
 	std::cout << "Reaped " << reaped << " del reasons" << std::endl;
 }

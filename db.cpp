@@ -9,30 +9,29 @@
 #include <time.h>
 #include <mutex>
 #include <thread>
-#include <boost/lexical_cast.hpp>
 
 #define DB_LOCK_TIMEOUT 50
 
-mysql::mysql(std::string mysql_db, std::string mysql_host, std::string username, std::string password) {
-	if (!conn.connect(mysql_db.c_str(), mysql_host.c_str(), username.c_str(), password.c_str(), 0)) {
-		std::cout << "Could not connect to MySQL" << std::endl;
+mysql::mysql(std::string mysql_db, std::string mysql_host, std::string username, std::string password) :
+	db(mysql_db), server(mysql_host), db_user(username), pw(password),
+	u_active(false), t_active(false), p_active(false), s_active(false), tok_active(false)
+{
+	try {
+		conn.connect(mysql_db.c_str(), mysql_host.c_str(), username.c_str(), password.c_str(), 0);
+	} catch (const mysqlpp::Exception &er) {
+		std::cout << "Failed to connect to MySQL (" << er.what() << ')' << std::endl;
 		return;
 	}
 
-	db = mysql_db, server = mysql_host, db_user = username, pw = password;
-	u_active = false; t_active = false; p_active = false; s_active = false; tok_active = false;
-
 	std::cout << "Connected to MySQL" << std::endl;
-	update_user_buffer = "";
-	update_torrent_buffer = "";
-	update_heavy_peer_buffer = "";
-	update_light_peer_buffer = "";
-	update_snatch_buffer = "";
-
 	std::cout << "Clearing xbt_files_users and resetting peer counts...";
 	std::cout.flush();
 	clear_peer_data();
 	std::cout << "done" << std::endl;
+}
+
+bool mysql::connected() {
+	return conn.connected();
 }
 
 void mysql::clear_peer_data() {
@@ -454,7 +453,7 @@ void mysql::do_flush_snatches() {
 					std::unique_lock<std::mutex> sq_lock(snatch_queue_lock);
 					snatch_queue.pop();
 				}
-			} 
+			}
 			catch (const mysqlpp::BadQuery &er) {
 				std::cerr << "Query error: " << er.what() << " in flush snatches with a qlength: " << snatch_queue.front().size() << " queue size: " << snatch_queue.size() << std::endl;
 				sleep(3);

@@ -1,3 +1,24 @@
+-- 1.0 (2015-01-26)
+NOTE: This version requires the following database change:
+ALTER TABLE xbt_files_users DROP PRIMARY KEY, ADD PRIMARY KEY (peer_id,fid,uid)
+
+Add a 'deleted' flag to user object to stop including removed users in returned peer lists
+Add a prefix to the peer list keys for randomization and smaller chance of peer id collisions
+Add HTTP Keep-Alive support and show request rate in the tracker stats
+Add readonly mode for easier testing
+Catch exceptions in the mysql::load_* functions
+Configurable max/default numwant parameter
+Don't disable binlogs in the peer flush sessions
+Don't start a reaper thread if it's already running
+Inline peer_is_visible and user functions
+Mark nonchanging parameter as const
+Mark users with IP = 127.0.0.1 as protected
+Read settings from a config file instead of a compiled object
+Reload torrent list, user list and client whitelist on SIGUSR1
+Use atomic variables for stats
+Use consistent integer widths where it matters
+Use std::lock_guard instead of std::unique_lock for mutex
+
 -- 0.8 (2014-03-27)
 Add setting for maximum request size
 Get client IP from the x-forwarded-for header if it is provided
@@ -22,7 +43,6 @@ Configurable site path
 Expire multiple tokens in a single request to the web server
 Less spammy output unless a -v switch is passed when starting Ocelot
 Make flush queries slightly less spammy by moving them to the functions that invoke flush threads
-Make Ocelot clear stale peer data out of the db on startup
 Print warning instead of error if someone submits an IPv6 or otherwise invalid address
 Remove unused logger class
 Send special data to search engine crawlers (and other odd clients) in an attempt to prevent indexing of announce URLs
@@ -40,7 +60,6 @@ Track transfer stats from users without leech privs
 Convert all headers to lowercase
 Don't show users to themselves (patch by GrecKo)
 Don't write peer updates to the binlog
-Fix incorrect handling of "corrupt" stat
 Search for peer in leecher list if not found in seeders list
 Sort response dictionary according to BitTorrent specs
 

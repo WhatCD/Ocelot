@@ -13,18 +13,26 @@
 
 using boost::asio::ip::tcp;
 
-site_comm::site_comm(config &config)
-{
-	conf = config;
-	t_active = false;
+site_comm::site_comm(config * conf) : t_active(false) {
+	load_config(conf);
+}
+
+void site_comm::load_config(config * conf) {
+	site_host = conf->get_str("site_host");
+	site_path = conf->get_str("site_path");
+	site_password = conf->get_str("site_password");
+	readonly = conf->get_bool("readonly");
+}
+
+void site_comm::reload_config(config * conf) {
+	load_config(conf);
 }
 
 bool site_comm::all_clear() {
 	return (token_queue.size() == 0);
 }
 
-void site_comm::expire_token(int torrent, int user)
-{
+void site_comm::expire_token(int torrent, int user) {
 	std::stringstream token_pair;
 	token_pair << user << ':' << torrent;
 	if (expire_token_buffer != "") {
@@ -33,15 +41,21 @@ void site_comm::expire_token(int torrent, int user)
 	expire_token_buffer += token_pair.str();
 	if (expire_token_buffer.length() > 350) {
 		std::cout << "Flushing overloaded token buffer" << std::endl;
-		std::unique_lock<std::mutex> lock(expire_queue_lock);
-		token_queue.push(expire_token_buffer);
+		if (!readonly) {
+			std::lock_guard<std::mutex> lock(expire_queue_lock);
+			token_queue.push(expire_token_buffer);
+		}
 		expire_token_buffer.clear();
 	}
 }
 
 void site_comm::flush_tokens()
 {
-	std::unique_lock<std::mutex> lock(expire_queue_lock);
+	if (readonly) {
+		expire_token_buffer.clear();
+		return;
+	}
+	std::lock_guard<std::mutex> lock(expire_queue_lock);
 	size_t qsize = token_queue.size();
 	if (verbose_flush || qsize > 0) {
 		std::cout << "Token expire queue size: " << qsize << std::endl;
@@ -65,7 +79,7 @@ void site_comm::do_flush_tokens()
 			boost::asio::io_service io_service;
 
 			tcp::resolver resolver(io_service);
-			tcp::resolver::query query(conf.site_host, "http");
+			tcp::resolver::query query(site_host, "http");
 			tcp::resolver::iterator endpoint_iterator = resolver.resolve(query);
 			tcp::resolver::iterator end;
 
@@ -81,11 +95,11 @@ void site_comm::do_flush_tokens()
 
 			boost::asio::streambuf request;
 			std::ostream request_stream(&request);
-			request_stream << "GET " << conf.site_path << "/tools.php?key=" << conf.site_password;
-			request_stream << "&type=expiretoken&action=ocelot&tokens=" << token_queue.front() << " HTTP/1.0\r\n";
-			request_stream << "Host: " << conf.site_host << "\r\n";
-			request_stream << "Accept: */*\r\n";
-			request_stream << "Connection: close\r\n\r\n";
+			request_stream << "GET " << site_path << "/tools.php?key=" << site_password
+				<< "&type=expiretoken&action=ocelot&tokens=" << token_queue.front() << " HTTP/1.0\r\n"
+				<< "Host: " << site_host << "\r\n"
+				<< "Accept: */*\r\n"
+				<< "Connection: close\r\n\r\n";
 
 			boost::asio::write(socket, request);
 
@@ -106,7 +120,7 @@ void site_comm::do_flush_tokens()
 			}
 
 			if (status_code == 200) {
-				std::unique_lock<std::mutex> lock(expire_queue_lock);
+				std::lock_guard<std::mutex> lock(expire_queue_lock);
 				token_queue.pop();
 			} else {
 				std::cout << "Response returned with status code " << status_code << " when trying to expire a token!" << std::endl;;

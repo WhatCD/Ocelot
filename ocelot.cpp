@@ -1,3 +1,7 @@
+#include <fstream>
+#include <iostream>
+#include <csignal>
+#include <thread>
 #include "ocelot.h"
 #include "config.h"
 #include "db.h"
@@ -8,13 +12,33 @@
 
 static connection_mother *mother;
 static worker *work;
-struct stats stats;
+static mysql *db;
+static site_comm *sc;
+static config *conf;
+static schedule *sched;
 
-static void sig_handler(int sig)
-{
-	std::cout << "Caught SIGINT/SIGTERM" << std::endl;
-	if (work->signal(sig)) {
-		exit(0);
+struct stats_t stats;
+
+static void sig_handler(int sig) {
+	if (sig == SIGINT || sig == SIGTERM) {
+		std::cout << "Caught SIGINT/SIGTERM" << std::endl;
+		if (work->shutdown()) {
+			exit(0);
+		}
+	} else if (sig == SIGHUP) {
+		std::cout << "Reloading config" << std::endl;
+		std::cout.flush();
+		conf->reload();
+		db->reload_config(conf);
+		mother->reload_config(conf);
+		sc->reload_config(conf);
+		sched->reload_config(conf);
+		work->reload_config(conf);
+		std::cout << "Done reloading config" << std::endl;
+	} else if (sig == SIGUSR1) {
+		std::cout << "Reloading from database" << std::endl;
+		std::thread w_thread(&worker::reload_lists, work);
+		w_thread.detach();
 	}
 }
 
@@ -22,48 +46,55 @@ int main(int argc, char **argv) {
 	// we don't use printf so make cout/cerr a little bit faster
 	std::ios_base::sync_with_stdio(false);
 
-	config conf;
+	conf = new config();
 
-	signal(SIGINT, sig_handler);
-	signal(SIGTERM, sig_handler);
-
-	bool verbose = false;
-	for (int i = argc; i > 1; i--) {
-		if (!strcmp(argv[1], "-v")) {
+	bool verbose = false, conf_arg = false;
+	std::string conf_file_path("./ocelot.conf");
+	for (int i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "-v")) {
 			verbose = true;
+		} else if (!strcmp(argv[i], "-c") && i < argc - 1) {
+			conf_arg = true;
+			conf_file_path = argv[++i];
+		} else {
+			std::cout << "Usage: " << argv[0] << " [-v] [-c configfile]" << std::endl;
+			return 0;
 		}
 	}
 
-	mysql db(conf.mysql_db, conf.mysql_host, conf.mysql_username, conf.mysql_password);
-	if (!db.connected()) {
+	std::ifstream conf_file(conf_file_path);
+	if (conf_file.fail()) {
+		std::cout << "Using default config because '" << conf_file_path << "' couldn't be opened" << std::endl;
+		if (!conf_arg) {
+			std::cout << "Start Ocelot with -c <path> to specify config file if necessary" << std::endl;
+		}
+	} else {
+		conf->load(conf_file_path, conf_file);
+	}
+
+	db = new mysql(conf);
+
+	if (!db->connected()) {
 		std::cout << "Exiting" << std::endl;
 		return 0;
 	}
-	db.verbose_flush = verbose;
+	db->verbose_flush = verbose;
 
-	site_comm sc(conf);
-	sc.verbose_flush = verbose;
-
-	std::vector<std::string> whitelist;
-	db.load_whitelist(whitelist);
-	std::cout << "Loaded " << whitelist.size() << " clients into the whitelist" << std::endl;
-	if (whitelist.size() == 0) {
-		std::cout << "Assuming no whitelist desired, disabling" << std::endl;
-	}
+	sc = new site_comm(conf);
+	sc->verbose_flush = verbose;
 
 	user_list users_list;
-	db.load_users(users_list);
-	std::cout << "Loaded " << users_list.size() << " users" << std::endl;
-
 	torrent_list torrents_list;
-	db.load_torrents(torrents_list);
-	std::cout << "Loaded " << torrents_list.size() << " torrents" << std::endl;
-
-	db.load_tokens(torrents_list);
+	std::vector<std::string> whitelist;
+	db->load_users(users_list);
+	db->load_torrents(torrents_list);
+	db->load_whitelist(whitelist);
 
 	stats.open_connections = 0;
 	stats.opened_connections = 0;
 	stats.connection_rate = 0;
+	stats.requests = 0;
+	stats.request_rate = 0;
 	stats.leechers = 0;
 	stats.seeders = 0;
 	stats.announcements = 0;
@@ -74,10 +105,28 @@ int main(int argc, char **argv) {
 	stats.start_time = time(NULL);
 
 	// Create worker object, which handles announces and scrapes and all that jazz
-	work = new worker(torrents_list, users_list, whitelist, &conf, &db, &sc);
+	work = new worker(conf, torrents_list, users_list, whitelist, db, sc);
+
+	// Create schedule object
+	sched = new schedule(conf, work, db, sc);
 
 	// Create connection mother, which binds to its socket and handles the event stuff
-	mother = new connection_mother(work, &conf, &db, &sc);
+	mother = new connection_mother(conf, work, db, sc, sched);
+
+	// Add signal handlers now that all objects have been created
+	struct sigaction handler, ignore;
+	ignore.sa_handler = SIG_IGN;
+	handler.sa_handler = sig_handler;
+	sigemptyset(&handler.sa_mask);
+	handler.sa_flags = 0;
+
+	sigaction(SIGINT, &handler, NULL);
+	sigaction(SIGTERM, &handler, NULL);
+	sigaction(SIGHUP, &handler, NULL);
+	sigaction(SIGUSR1, &handler, NULL);
+	sigaction(SIGUSR2, &ignore, NULL);
+
+	mother->run();
 
 	return 0;
 }

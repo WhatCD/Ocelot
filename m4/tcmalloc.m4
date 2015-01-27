@@ -6,7 +6,6 @@ AC_DEFUN([TCMALLOC],
 		[with_tcmalloc=yes])
 
 	AS_IF([test "x$with_tcmalloc" != "xno"],
-		[AC_CHECK_LIB([tcmalloc], [tc_free], [],
-			[AC_MSG_NOTICE([tcmalloc libraries not installed])]
-		)])
-])
+		[AC_CHECK_LIB([tcmalloc], [tc_free])]
+	)]
+)

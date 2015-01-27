@@ -11,7 +11,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-
+#include "config.h"
+#include "worker.h"
+#include "schedule.h"
+#include "db.h"
+#include "site_comm.h"
 
 /*
 TODO find out what these do
@@ -47,19 +51,29 @@ THE WORKER
 // THE MOTHER - Spawns connection middlemen
 class connection_mother {
 	private:
+		void load_config(config * conf);
+		unsigned int listen_port;
+		unsigned int max_connections;
+
 		int listen_socket;
-		sockaddr_in address;
-		socklen_t addr_len;
 		worker * work;
-		config * conf;
 		mysql * db;
-		site_comm * sc;
+		ev::io listen_event;
 		ev::timer schedule_event;
 
 	public:
-		connection_mother(worker * worker_obj, config * config_obj, mysql * db_obj, site_comm * sc_obj);
-		void handle_connect(ev::io &watcher, int events_flags);
+		connection_mother(config * conf, worker * worker_obj, mysql * db_obj, site_comm * sc_obj, schedule * sched_obj);
 		~connection_mother();
+		void reload_config(config * conf);
+		int create_listen_socket();
+		void run();
+		void handle_connect(ev::io &watcher, int events_flags);
+
+		unsigned int max_middlemen;
+		unsigned int connection_timeout;
+		unsigned int keepalive_timeout;
+		unsigned int max_read_buffer;
+		unsigned int max_request_size;
 };
 
 // THE MIDDLEMAN
@@ -68,6 +82,7 @@ class connection_mother {
 class connection_middleman {
 	private:
 		int connect_sock;
+		client_opts_t client_opts;
 		unsigned int written;
 		ev::io read_event;
 		ev::io write_event;
@@ -75,13 +90,11 @@ class connection_middleman {
 		std::string request;
 		std::string response;
 
-		config * conf;
 		connection_mother * mother;
 		worker * work;
-		sockaddr_in client_addr;
 
 	public:
-		connection_middleman(int &listen_socket, sockaddr_in &address, socklen_t &addr_len, worker* work, connection_mother * mother_arg, config * config_obj);
+		connection_middleman(int &listen_socket, worker* work, connection_mother * mother_arg);
 		~connection_middleman();
 
 		void handle_read(ev::io &watcher, int events_flags);

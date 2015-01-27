@@ -47,12 +47,17 @@ AC_DEFUN([EV_DEVEL],
 
 		if test -z "$ac_cv_ev_lib"
 		then
+			AC_MSG_RESULT([no])
 			AC_MSG_ERROR([Didn't find the libev library dir in '$EV_lib_check'])
 		fi
 
 		case "$ac_cv_ev_lib" in
-			/* ) ;;
-			* )  AC_MSG_ERROR([The libev library directory ($ac_cv_ev_lib) must be an absolute path.]) ;;
+			/* )
+				;;
+			* )
+				AC_MSG_RESULT([])
+				AC_MSG_ERROR([The libev library directory ($ac_cv_ev_lib) must be an absolute path.])
+				;;
 		esac
 	])
 	AC_SUBST([EV_LIB_DIR],[$ac_cv_ev_lib])
@@ -73,12 +78,17 @@ AC_DEFUN([EV_DEVEL],
 
 		if test -z "$ac_cv_ev_inc"
 		then
+			AC_MSG_RESULT([no])
 			AC_MSG_ERROR([Didn't find the libev header dir in '$EV_inc_check'])
 		fi
 
 		case "$ac_cv_ev_inc" in
-			/* ) ;;
-			* )  AC_MSG_ERROR([The libev header directory ($ac_cv_ev_inc) must be an absolute path.]) ;;
+			/* )
+				;;
+			* )
+				AC_MSG_RESULT([])
+				AC_MSG_ERROR([The libev header directory ($ac_cv_ev_inc) must be an absolute path.])
+				;;
 		esac
 	])
 	AC_SUBST([EV_INC_DIR],[$ac_cv_ev_inc])
@@ -88,15 +98,38 @@ AC_DEFUN([EV_DEVEL],
 	dnl let us build actual programs against libev.
 	dnl
 	case "$ac_cv_ev_lib" in
-	  /usr/lib) ;;
-	  *) LDFLAGS="$LDFLAGS -L${ac_cv_ev_lib}" ;;
+		/usr/lib)
+			;;
+		*)
+			LDFLAGS="$LDFLAGS -L${ac_cv_ev_lib}"
+			;;
 	esac
 	CPPFLAGS="$CPPFLAGS -I${ac_cv_ev_inc}"
 	AC_MSG_CHECKING([that we can build libev programs])
-	AC_COMPILE_IFELSE(
-		[AC_LANG_PROGRAM([#include <ev++.h>],
-			[ev::io i])],
-		AC_MSG_RESULT([yes]),
-		AC_MSG_ERROR([no]))
+	AC_EGREP_CPP(
+		[bad_gcc_libev_ver],
+		[
+#include <ev.h>
+#if __GNUC__ && (__GNUC__ < 4 || __GNUC__ == 4 && __GNUC_MINOR__ < 9) && EV_VERSION_MAJOR == 4 && EV_VERSION_MINOR == 18
+	bad_gcc_libev_ver
+#endif
+		],
+		[AC_MSG_RESULT([no])
+			AC_MSG_ERROR([GCC versions prior to 4.9 cannot compile libev 4.18])],
+		[],
+	)
+
+	LIBS="-lev $LIBS"
+	AC_LANG_PUSH([C++])
+	AC_LINK_IFELSE(
+		[AC_LANG_PROGRAM(
+			[#include <ev++.h>],
+			[ev::io i])
+		],
+		[AC_MSG_RESULT([yes])],
+		[AC_MSG_RESULT([no])
+			AC_MSG_FAILURE([Cannot build libev programs])]
+	)
+	AC_LANG_POP([C++])
 ]) dnl End EV_DEVEL
 

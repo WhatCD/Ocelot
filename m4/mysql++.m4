@@ -76,12 +76,17 @@ AC_DEFUN([MYSQLPP_DEVEL],
 
 		if test -z "$ac_cv_mysqlpp_lib"
 		then
+			AC_MSG_RESULT([no])
 			AC_MSG_ERROR([Didn't find the MySQL++ library dir in '$MYSQLPP_lib_check'])
 		fi
 
 		case "$ac_cv_mysqlpp_lib" in
-			/* ) ;;
-			* )  AC_MSG_ERROR([The MySQL++ library directory ($ac_cv_mysqlpp_lib) must be an absolute path.]) ;;
+			/* )
+				;;
+			* )
+				AC_MSG_RESULT([no])
+				AC_MSG_ERROR([The MySQL++ library directory ($ac_cv_mysqlpp_lib) must be an absolute path.])
+				;;
 		esac
 	])
 	AC_SUBST([MYSQLPP_LIB_DIR],[$ac_cv_mysqlpp_lib])
@@ -102,12 +107,17 @@ AC_DEFUN([MYSQLPP_DEVEL],
 
 		if test -z "$ac_cv_mysqlpp_inc"
 		then
+			AC_MSG_RESULT([no])
 			AC_MSG_ERROR([Didn't find the MySQL++ header dir in '$MYSQLPP_inc_check'])
 		fi
 
 		case "$ac_cv_mysqlpp_inc" in
-			/* ) ;;
-			* )  AC_MSG_ERROR([The MySQL++ header directory ($ac_cv_mysqlpp_inc) must be an absolute path.]) ;;
+			/* )
+				;;
+			* )
+				AC_MSG_RESULT([no])
+				AC_MSG_ERROR([The MySQL++ header directory ($ac_cv_mysqlpp_inc) must be an absolute path.])
+				;;
 		esac
 	])
 	AC_SUBST([MYSQLPP_INC_DIR],[$ac_cv_mysqlpp_inc])
@@ -117,15 +127,24 @@ AC_DEFUN([MYSQLPP_DEVEL],
 	dnl let us build actual programs against MySQL++.
 	dnl
 	case "$ac_cv_mysqlpp_lib" in
-	  /usr/lib) ;;
-	  *) LDFLAGS="$LDFLAGS -L${ac_cv_mysqlpp_lib}" ;;
+		/usr/lib)
+			;;
+		*)
+			LDFLAGS="$LDFLAGS -L${ac_cv_mysqlpp_lib}"
+			;;
 	esac
-	CPPFLAGS="$CPPFLAGS -I${ac_cv_mysqlpp_inc} -I${MYSQL_C_INC_DIR}"
+	CPPFLAGS="$CPPFLAGS -I${ac_cv_mysqlpp_inc}"
+	LIBS="-lmysqlpp $LIBS"
+	AC_LANG_PUSH([C++])
 	AC_MSG_CHECKING([that we can build MySQL++ programs])
-	AC_COMPILE_IFELSE(
-		[AC_LANG_PROGRAM([#include <mysql++.h>],
-			[mysqlpp::Connection c(false)])],
-		AC_MSG_RESULT([yes]),
-		AC_MSG_ERROR([no]))
+	AC_LINK_IFELSE(
+		[AC_LANG_PROGRAM(
+			[#include <mysql++.h>],
+			[mysqlpp::Connection c(false)]
+		)],
+		[AC_MSG_RESULT([yes])],
+		[AC_MSG_RESULT([no])
+			AC_MSG_ERROR([Cannot build MySQL++ programs])]
+	)
+	AC_LANG_POP([C++])
 ]) dnl End MYSQLPP_DEVEL
-

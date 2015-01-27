@@ -6,7 +6,7 @@ dnl We define the following configure script flags:
 dnl
 dnl		--with-mysql: Give prefix for both library and headers, and try
 dnl			to guess subdirectory names for each by tacking common
-dnl         suffixes on like /lib and /include.
+dnl			suffixes on like /lib and /include.
 dnl		--with-mysql-lib: Same as --with-mysql, but for library only.
 dnl		--with-mysql-include: Same as --with-mysql, but for headers only.
 dnl
@@ -58,23 +58,27 @@ AC_DEFUN([MYSQL_C_API_LOCATION],
 
 	if test -z "$MYSQL_C_LIB_DIR"
 	then
+		AC_MSG_RESULT([no])
 		AC_MSG_ERROR([Didn't find $MYSQL_C_LIB_NAME library in '$MYSQL_lib_check'])
 	fi
 
 	case "$MYSQL_C_LIB_DIR" in
-		/* ) ;;
-		* )  AC_MSG_ERROR([The MySQL library directory ($MYSQL_C_LIB_DIR) must be an absolute path.]) ;;
+		/* )
+			;;
+		* )
+			AC_MSG_RESULT([])
+			AC_MSG_ERROR([The MySQL library directory ($MYSQL_C_LIB_DIR) must be an absolute path.]) ;;
 	esac
 
 	AC_MSG_RESULT([$MYSQL_C_LIB_DIR])
 
 	case "$MYSQL_C_LIB_DIR" in
-	  /usr/lib)
-		MYSQL_C_LIB_DIR=
-	  	;;
-	  *)
-	  	LDFLAGS="$LDFLAGS -L${MYSQL_C_LIB_DIR}"
-		;;
+		/usr/lib)
+			MYSQL_C_LIB_DIR=
+			;;
+		*)
+			LDFLAGS="$LDFLAGS -L${MYSQL_C_LIB_DIR}"
+			;;
 	esac
 
 
@@ -94,45 +98,48 @@ AC_DEFUN([MYSQL_C_API_LOCATION],
 
 	if test -z "$MYSQL_C_INC_DIR"
 	then
+		AC_MSG_RESULT([no])
 		AC_MSG_ERROR([Didn't find the MySQL include dir in '$MYSQL_inc_check'])
 	fi
 
 	case "$MYSQL_C_INC_DIR" in
-		/* ) ;;
-		* )  AC_MSG_ERROR([The MySQL include directory ($MYSQL_C_INC_DIR) must be an absolute path.]) ;;
+		/* )
+			;;
+		* )
+			AC_MSG_RESULT([])
+			AC_MSG_ERROR([The MySQL include directory ($MYSQL_C_INC_DIR) must be an absolute path.]) ;;
 	esac
 
 	AC_MSG_RESULT([$MYSQL_C_INC_DIR])
 
 	CPPFLAGS="$CPPFLAGS -I${MYSQL_C_INC_DIR}"
 
-    AC_MSG_CHECKING([if we can link to MySQL C API library directly])
+	AC_MSG_CHECKING([if we can link to MySQL C API library directly])
 	save_LIBS=$LIBS
-	LIBS="$LIBS -l$MYSQL_C_LIB_NAME $MYSQLPP_EXTRA_LIBS"
-	AC_TRY_LINK(
-        [ #include <mysql.h> ],
-        [ mysql_store_result(0); ],
-        AC_MSG_RESULT([yes]),
-        [ AC_MSG_RESULT([no])	
-          LIBS="$save_LIBS"
-          AC_CHECK_HEADERS(zlib.h, AC_CHECK_LIB(z, gzread, [],
-              [ AC_MSG_ERROR([zlib not found]) ]))
-          AC_MSG_CHECKING([whether adding -lz will let MySQL C API link succeed])
-          MYSQLPP_EXTRA_LIBS="$MYSQLPP_EXTRA_LIBS -lz"
-          LIBS="$save_LIBS -l$MYSQL_C_LIB_NAME $MYSQLPP_EXTRA_LIBS"
-          AC_TRY_LINK(
-              [ #include <mysql.h> ],
-              [ mysql_store_result(0); ],
-              AC_MSG_RESULT([yes]),
-              [ AC_MSG_RESULT([no])
-                AC_MSG_ERROR([Unable to link to MySQL client library!])
-              ]
-          )
-        ])
-	LIBS=$save_LIBS
+	LIBS="-l$MYSQL_C_LIB_NAME $LIBS"
+	AC_LINK_IFELSE(
+		[AC_LANG_PROGRAM(
+			[#include <mysql.h>],
+			[mysql_store_result(0);])],
+		[AC_MSG_RESULT([yes])],
+		[AC_MSG_RESULT([no])
+			LIBS="$save_LIBS"
+			AC_CHECK_HEADERS(zlib.h, AC_CHECK_LIB(z, gzread, [],
+				[AC_MSG_ERROR([zlib not found])]))
+			AC_MSG_CHECKING([whether adding -lz will let MySQL C API link succeed])
+			LIBS="-l$MYSQL_C_LIB_NAME -lz $save_LIBS"
+			AC_LINK_IFELSE(
+				[AC_LANG_PROGRAM(
+					[#include <mysql.h>],
+					[mysql_store_result(0);]
+				)],
+				[AC_MSG_RESULT([yes])],
+				[AC_MSG_RESULT([no])
+					AC_MSG_ERROR([Unable to link to MySQL client library!])]
+			)]
+	)
 
 	AC_SUBST(MYSQL_C_INC_DIR)
 	AC_SUBST(MYSQL_C_LIB_DIR)
 	AC_SUBST(MYSQL_C_LIB_NAME)
 ]) dnl MYSQL_C_API_LOCATION
-

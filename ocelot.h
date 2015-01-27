@@ -1,26 +1,29 @@
+#ifndef OCELOT_H
+#define OCELOT_H
+
 #include <string>
 #include <map>
 #include <vector>
 #include <unordered_map>
 #include <set>
 #include <memory>
-#include <mutex>
+#include <atomic>
 
-#ifndef OCELOT_H
-#define OCELOT_H
+typedef uint32_t torid_t;
+typedef uint32_t userid_t;
 
 class user;
 typedef std::shared_ptr<user> user_ptr;
 
 typedef struct {
-	unsigned int port;
 	int64_t uploaded;
 	int64_t downloaded;
 	int64_t corrupt;
 	int64_t left;
 	time_t last_announced;
 	time_t first_announced;
-	unsigned int announces;
+	uint32_t announces;
+	uint16_t port;
 	bool visible;
 	bool invalid_ip;
 	user_ptr user;
@@ -33,15 +36,15 @@ typedef std::map<std::string, peer> peer_list;
 enum freetype { NORMAL, FREE, NEUTRAL };
 
 typedef struct {
-	int id;
+	torid_t id;
+	uint32_t completed;
 	int64_t balance;
-	int completed;
 	freetype free_torrent;
 	time_t last_flushed;
 	peer_list seeders;
 	peer_list leechers;
 	std::string last_selected_seeder;
-	std::set<int> tokened_users;
+	std::set<userid_t> tokened_users;
 } torrent;
 
 enum {
@@ -75,23 +78,30 @@ typedef struct {
 	time_t time;
 } del_message;
 
+typedef struct {
+	bool gzip;
+	bool html;
+	bool http_close;
+} client_opts_t;
+
 typedef std::unordered_map<std::string, torrent> torrent_list;
 typedef std::unordered_map<std::string, user_ptr> user_list;
 typedef std::unordered_map<std::string, std::string> params_type;
 
-struct stats {
-	std::mutex mutex;
-	unsigned int open_connections;
-	uint64_t opened_connections;
-	uint64_t connection_rate;
-	unsigned int leechers;
-	unsigned int seeders;
-	uint64_t announcements;
-	uint64_t succ_announcements;
-	uint64_t scrapes;
-	uint64_t bytes_read;
-	uint64_t bytes_written;
+struct stats_t {
+	std::atomic<uint32_t> open_connections;
+	std::atomic<uint64_t> opened_connections;
+	std::atomic<uint64_t> connection_rate;
+	std::atomic<uint32_t> leechers;
+	std::atomic<uint32_t> seeders;
+	std::atomic<uint64_t> requests;
+	std::atomic<uint64_t> request_rate;
+	std::atomic<uint64_t> announcements;
+	std::atomic<uint64_t> succ_announcements;
+	std::atomic<uint64_t> scrapes;
+	std::atomic<uint64_t> bytes_read;
+	std::atomic<uint64_t> bytes_written;
 	time_t start_time;
 };
-extern struct stats stats;
+extern struct stats_t stats;
 #endif

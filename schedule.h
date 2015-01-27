@@ -1,20 +1,24 @@
-#include <ev++.h>
-#include <string>
-#include <iostream>
+#ifndef SCHEDULE_H
+#define SCHEDULE_H
 
+#include <ev++.h>
 class schedule {
 	private:
-		connection_mother * mother;
+		void load_config(config * conf);
+
+		unsigned int reap_peers_interval;
 		worker * work;
-		config * conf;
 		mysql * db;
 		site_comm * sc;
 		uint64_t last_opened_connections;
-		int counter;
-
-		time_t next_flush;
-		time_t next_reap_peers;
+		uint64_t last_request_count;
+		unsigned int counter;
+		int next_reap_peers;
 	public:
-		schedule(connection_mother * mother_obj, worker * worker_obj, config* conf_obj, mysql * db_obj, site_comm * sc_obj);
+		schedule(config * conf, worker * worker_obj, mysql * db_obj, site_comm * sc_obj);
+		void reload_config(config * conf);
 		void handle(ev::timer &watcher, int events_flags);
+
+		unsigned int schedule_interval;
 };
+#endif
